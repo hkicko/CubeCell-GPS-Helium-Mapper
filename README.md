@@ -1,5 +1,5 @@
-# CubeCell-GPS
-CubeCell-GPS Helium Mapper based on https://github.com/jas-williams/CubeCell-Helium-Mapper.git with the following improvements:
+# Overview
+**CubeCell-GPS Helium Mapper** based on https://github.com/jas-williams/CubeCell-Helium-Mapper.git with the following improvements:
 
 - No longer stopping the GPS after each SEND, allowing for faster GPS Fix next time.
 - Added counters on the JOIN and GPS Fix Wait screens so the user could see how long it takes (could be used to compare antennas, like for example the difference between internal and external GPS antenna is clearly visible, but now you can roughly measure in seconds how much faster you get a fix with one GPS antenna vs another)
