@@ -11,12 +11,16 @@
 extern SSD1306Wire  display; 
 Air530Class GPS;
 
-#define GPS_CONTINUE_TIME     5000      // Wait 5 Seconds after FIX for GPS to stabalise
-#define MOVING_UPDATE_RATE    1000      // Update rate when moving
+#define MOVING_UPDATE_RATE    5000      // Update rate when moving
 #define STOPPED_UPDATE_RATE   60000     // Update rate when stopped
 #define SLEEPING_UPDATE_RATE  21600000  // Update every 6hrs when sleeping
 
-#define SPEED_HISTORY_BUFFER_SIZE 5     // How many past readings to use for avg speed calc
+/*
+  How many past readings to use for avg speed calc.
+  This is also the number of "good" readings we need before sending.
+  "Good" readings are readings not older than 1s.
+*/
+#define SPEED_HISTORY_BUFFER_SIZE 5     
 
 /*
    set LoraWan_RGB to Active,the RGB active in loraWan
@@ -48,7 +52,9 @@ LoRaMacRegion_t loraWanRegion = ACTIVE_REGION;
 DeviceClass_t  loraWanClass = LORAWAN_CLASS;
 
 /*the application data transmission duty cycle.  value in [ms].*/
-uint32_t appTxDutyCycle = 1000; // Start with non-zero value, for the first transmission with previously stored JOIN, but it will be changed later depending on the mode
+/* Start with non-zero value, for the first transmission with previously stored JOIN,
+ * but it will be changed later depending on the mode */
+uint32_t appTxDutyCycle = 1000; 
 
 /*OTAA or ABP*/
 bool overTheAirActivation = LORAWAN_NETMODE;
@@ -144,12 +150,14 @@ const uint8_t helium_logo_bmp[] PROGMEM = {
 };
 
 bool      sleepMode           = false;
-bool      gpsFixOK            = false;
+bool      loopingInSend       = false;
 uint32_t  lastScreenPrint     = 0;
 uint32_t  joinStart           = 0;
 uint32_t  gpsSearchStart      = 0;
 double    speedHistory[SPEED_HISTORY_BUFFER_SIZE];
 uint8_t   speedHistoryPointer = 0;
+uint8_t   spdHistBuffFull     = 0; /* Counter to tell us how full the buffer is - we want it min SPEED_HISTORY_BUFFER_SIZE before we 
+                                    could send and we use that instead of waiting a specific time for the readings to "stabilize" */
 float     avgSpeed            = 0;
 
 int32_t fracPart(double val, int n)
@@ -179,6 +187,7 @@ void clearSpeedHistory()
   }
   avgSpeed = 0;
   speedHistoryPointer = 0;
+  spdHistBuffFull     = 0;
 }
 
 void addSpeedReading(double speedValue)
@@ -190,6 +199,16 @@ void addSpeedReading(double speedValue)
   {
     speedHistoryPointer = 0;
   }  
+
+  if (spdHistBuffFull < SPEED_HISTORY_BUFFER_SIZE)
+  {
+    spdHistBuffFull++;
+  }  
+}
+
+bool enoughSpeedHistory()
+{
+  return (spdHistBuffFull == SPEED_HISTORY_BUFFER_SIZE);
 }
 
 void calcAvgSpeed()
@@ -403,8 +422,7 @@ void displayGPSInfoEverySecond(bool wakeupDisplay)
 void startGPS()
 {
   GPS.begin();
-  GPS.setmode(MODE_GPS_GLONASS); //Enable dual mode - GLONASS and GPS 
-  gpsFixOK = false;
+  GPS.setmode(MODE_GPS_GLONASS); //Enable dual mode - GLONASS and GPS   
   gpsSearchStart = millis();
 }
 
@@ -417,17 +435,12 @@ void cycleGPS()
 
   if (GPS.location.age() < 1000)
   {
-    gpsFixOK = true;    
     addSpeedReading(GPS.speed.kmph());
     calcAvgSpeed();        
   }
   else
   {
-    if (gpsFixOK) // We had GPS fix but lost it, then we have to start new search for fix
-    {
-      gpsSearchStart = millis();
-      gpsFixOK = false;     
-    }    
+    clearSpeedHistory(); // Force the start of new collection of good values    
   }
 }
 
@@ -596,13 +609,17 @@ void setup()
   
   deviceState = DEVICE_STATE_INIT;
   
-  LoRaWAN.ifskipjoin(); // This will switch deviceState to DEVICE_STATE_SLEEP and schedule a SEND timer which will switch to DEVICE_STATE_SEND, if saved network info exists and no new JOIN is necessary
+  /* This will switch deviceState to DEVICE_STATE_SLEEP and schedule a SEND timer which will 
+    switch to DEVICE_STATE_SEND if saved network info exists and no new JOIN is necessary */
+  LoRaWAN.ifskipjoin(); 
   
   if (deviceState != DEVICE_STATE_INIT)
   {
-    startGPS(); // This messes up with LoRaWAN.init() so it can't be called before it, but if we are not going to call LoRaWAN.init(), then we have to do it here. 
+    /* This messes up with LoRaWAN.init() so it can't be called before it, 
+      but if we are not going to call LoRaWAN.init(), then we have to do it here. */
+    startGPS(); 
   }
-  //setup user button - this must be after LoRaWAN.ifskipjoin(), because the button is used there to cancel stored settings load and initiate a new join
+  //Setup user button - this must be after LoRaWAN.ifskipjoin(), because the button is used there to cancel stored settings load and initiate a new join
   pinMode(P3_3, INPUT);
   attachInterrupt(P3_3, userKey, FALLING);   
 }
@@ -635,10 +652,18 @@ void loop()
     {
       cycleGPS(); // Read anything queued in the GPS Serial buffer, parse it and populate the internal variables with the latest GPS data
     
+      if (!loopingInSend) // We are just getting here from some other state
+      {
+        loopingInSend = true; // We may be staying here for a while, but we want to reset the below variables only once when we enter.
+        /* Reset both these variables. The goal is to skip the first unnecessary display of the GPS Fix Wait screen 
+          and only show it if there was more than 1s without GPS fix and correctly display the time passed on it */
+        gpsSearchStart = lastScreenPrint = millis(); 
+      }
+
       if (GPS.location.age() < 1000) 
       {
         // Only send if it had enough time to stabilize, otherwise just display on screen
-        if (millis() - gpsSearchStart > GPS_CONTINUE_TIME) 
+        if (enoughSpeedHistory()) 
         {        
           prepareTxFrame(appPort);
           if (!sleepMode) // In case user pressed the button while prepareTxFrame() was running
@@ -667,6 +692,7 @@ void loop()
     }
     case DEVICE_STATE_CYCLE:
     {
+      loopingInSend = false;
       // Schedule next packet transmission
       if (sleepMode) 
       {
@@ -703,6 +729,7 @@ void loop()
     }
     case DEVICE_STATE_SLEEP:
     {
+      loopingInSend = false;
       if (!loraJoined())
       {
         displayJoinTimer(); // When not joined yet, it will display the seconds passed, so the user knows it is doing something

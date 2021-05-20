@@ -6,8 +6,8 @@
 - Enabled the built in function for storing the network parameters after susccessful join, so it does not need to re-join next time after reboot
 
 This device is used for mapping the Helium networks LoRaWAN coverage. 
-The initial settings are - send every second while moving, every minute when stopped. 
-A quick press on the user button puts the GPS in a sleep mode. The sleep mode decreases the updates to once every 6hrs. 
+The initial settings are - send every 5 seconds while moving, every minute when stopped. 
+A quick press on the user button puts the GPS in a sleep mode. The sleep mode decreases the updates to once every 6 hours. 
 Pressing the user button while in sleep mode wakes it up and resumes normal operation.
 
 # Uploading the code
