@@ -13,7 +13,6 @@ Air530Class GPS;
 
 #define MOVING_UPDATE_RATE    5000      // Update rate when moving
 #define STOPPED_UPDATE_RATE   60000     // Update rate when stopped
-#define SLEEPING_UPDATE_RATE  21600000  // Update every 6hrs when sleeping
 
 /*
   How many past readings to use for avg speed calc.
@@ -576,17 +575,17 @@ void userKey(void)
         display.wakeup();
         displayLogoAndMsg("Waking Up......", 4000);
         startGPS();      
-        avgSpeed = 2; // Trick it into thinking we are moving, so it schedules next update sooner   
+        deviceState = DEVICE_STATE_SEND;   
       }
       else
       {
         display.wakeup();
         displayLogoAndMsg("Sleeping....", 4000);         
         display.sleep();
-        stopGPS();        
+        stopGPS();     
+        deviceState = DEVICE_STATE_SLEEP;   
       }
-      sleepMode = !sleepMode;
-      deviceState = DEVICE_STATE_CYCLE;      
+      sleepMode = !sleepMode;      
     }
   }
 }
@@ -650,55 +649,58 @@ void loop()
     }
     case DEVICE_STATE_SEND:
     {
-      cycleGPS(); // Read anything queued in the GPS Serial buffer, parse it and populate the internal variables with the latest GPS data
-    
-      if (!loopingInSend) // We are just getting here from some other state
+      if (sleepMode) // User pressed the button while we were waiting for the next send timer 
       {
-        loopingInSend = true; // We may be staying here for a while, but we want to reset the below variables only once when we enter.
-        /* Reset both these variables. The goal is to skip the first unnecessary display of the GPS Fix Wait screen 
-          and only show it if there was more than 1s without GPS fix and correctly display the time passed on it */
-        gpsSearchStart = lastScreenPrint = millis(); 
+        deviceState = DEVICE_STATE_SLEEP; // Set state to Sleep and exit
       }
-
-      if (GPS.location.age() < 1000) 
-      {
-        // Only send if it had enough time to stabilize, otherwise just display on screen
-        if (enoughSpeedHistory()) 
-        {        
-          prepareTxFrame(appPort);
-          if (!sleepMode) // In case user pressed the button while prepareTxFrame() was running
-          {      
-            LoRaWAN.displaySending();
-            LoRaWAN.send();                  
-          }
-          display.sleep();
-          VextOFF();
-          deviceState = DEVICE_STATE_CYCLE; // Schedule next send
-        }
-        else 
+      else 
+      {  
+        cycleGPS(); // Read anything queued in the GPS Serial buffer, parse it and populate the internal variables with the latest GPS data
+      
+        if (!loopingInSend) // We are just getting here from some other state
         {
-          if (!sleepMode)
-          {
-            displayGPSInfoEverySecond(false); // No need to wakeup the display, if we are looping here, it should be already on
-          }       
+          loopingInSend = true; // We may be staying here for a while, but we want to reset the below variables only once when we enter.
+          /* Reset both these variables. The goal is to skip the first unnecessary display of the GPS Fix Wait screen 
+            and only show it if there was more than 1s without GPS fix and correctly display the time passed on it */
+          gpsSearchStart = lastScreenPrint = millis(); 
         }
-      }   
-      else
-      {
-        display.wakeup(); // We can come here after a longer pause (like when stopped or sleeping) and that's why we need to wakeup the display
-        displayGPSWaitWithCounter();
-      }   
+
+        if (GPS.location.age() < 1000) 
+        {
+          // Only send if it had enough time to stabilize, otherwise just display on screen
+          if (enoughSpeedHistory()) 
+          {        
+            prepareTxFrame(appPort);
+            if (!sleepMode) // In case user pressed the button while prepareTxFrame() was running
+            {      
+              LoRaWAN.displaySending();
+              LoRaWAN.send();                  
+            }
+            display.sleep();
+            VextOFF();
+            deviceState = DEVICE_STATE_CYCLE; // Schedule next send
+          }
+          else 
+          {
+            if (!sleepMode)
+            {
+              displayGPSInfoEverySecond(false); // No need to wakeup the display, if we are looping here, it should be already on
+            }       
+          }
+        }   
+        else
+        {
+          display.wakeup(); // We can come here after a longer pause (like when stopped or sleeping) and that's why we need to wakeup the display
+          displayGPSWaitWithCounter();
+        }   
+      }
       break;
     }
     case DEVICE_STATE_CYCLE:
     {
       loopingInSend = false;
       // Schedule next packet transmission
-      if (sleepMode) 
-      {
-        appTxDutyCycle = SLEEPING_UPDATE_RATE;
-      }
-      else
+      if (!sleepMode) 
       {
         if (onTheMove()) 
         {
@@ -720,10 +722,11 @@ void loop()
           Serial.println(" STOPPED");
           #endif
         }
-      }
-  
-      txDutyCycleTime = appTxDutyCycle + randr(0, APP_TX_DUTYCYCLE_RND);
-      LoRaWAN.cycle(txDutyCycleTime);
+
+        txDutyCycleTime = appTxDutyCycle + randr(0, APP_TX_DUTYCYCLE_RND);
+        LoRaWAN.cycle(txDutyCycleTime);
+      }  
+      
       deviceState = DEVICE_STATE_SLEEP;
       break;
     }
