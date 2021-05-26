@@ -3,13 +3,19 @@
  */
 #include "LoRaWan_APP.h"
 #include "Arduino.h"
-#include "GPS_Air530.h"
+#include "GPS_Air530.h" // Enable this for board version 1.0 and 1.0_1
+//#include "GPS_Air530Z.h" // Enable this for board version 1.1
 #include "cubecell_SSD1306Wire.h"
 
 //#define DEBUG // Enable/Disable debug output over the serial console
 
-extern SSD1306Wire  display; 
-Air530Class GPS;
+extern SSD1306Wire            display; 
+#ifdef GPS_Air530_H
+Air530Class                   GPS;
+#endif
+#ifdef GPS_Air530Z_H
+Air530ZClass                  GPS;
+#endif
 
 #define MOVING_UPDATE_RATE    5000      // Update rate when moving
 #define STOPPED_UPDATE_RATE   60000     // Update rate when stopped
@@ -421,7 +427,10 @@ void displayGPSInfoEverySecond(bool wakeupDisplay)
 void startGPS()
 {
   GPS.begin();
+  // Air530Z code has setmode(MODE_GPS_BEIDOU_GLONASS) call in begin(), but for Air530 we will need to set it ourselves
+  #ifdef GPS_Air530_H
   GPS.setmode(MODE_GPS_GLONASS); //Enable dual mode - GLONASS and GPS   
+  #endif
   gpsSearchStart = millis();
 }
 
