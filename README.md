@@ -33,6 +33,7 @@ https://marketplace.visualstudio.com/items?itemName=platformio.platformio-ide
 Edit file main.cpp in folder \src.
 
 Comment out/uncomment the appropriate line for your board version (for GPS Air530 or Air530Z)
+
 Comment out/uncomment the #define lines for VIBR_SENSOR, VIBR_WAKE_FROM_SLEEP, MAX_STOPPED_CYCLES and edit the values for the timers if desired 
 
 Enter DevEUI(msb), AppEUI(msb), and AppKey(msb) from Helium Console, at the respective places in main.cpp. The values must be in MSB format. From console press the expand button to get the ID's as shown below.
