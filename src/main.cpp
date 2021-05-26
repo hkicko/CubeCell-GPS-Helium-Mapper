@@ -443,6 +443,12 @@ void cycleGPS()
   }
 }
 
+void stopGPS()
+{
+  GPS.end();
+  clearSpeedHistory();
+}
+
 void displayGPSWaitWithCounter()
 {  
   char str[30];
@@ -471,12 +477,6 @@ void displayGPSWaitWithCounter()
     display.display();
     lastScreenPrint = millis();
   }  
-}
-
-void stopGPS()
-{
-  GPS.end();
-  clearSpeedHistory();
 }
 
 static void prepareTxFrame(uint8_t port)
