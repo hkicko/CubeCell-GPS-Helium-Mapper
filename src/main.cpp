@@ -479,6 +479,31 @@ void displayGPSWaitWithCounter()
   }  
 }
 
+void switchModeToSleep(bool wakeupDisplay = true)
+{
+  sleepMode = true;
+  if (wakeupDisplay)
+  {
+    display.wakeup();
+  }  
+  displayLogoAndMsg("Sleeping....", 4000);         
+  display.sleep();
+  stopGPS();        
+  deviceState = DEVICE_STATE_SLEEP;   
+}
+
+void switchModeOutOfSleep(bool wakeupDisplay = true)
+{
+  sleepMode = false;
+  if (wakeupDisplay)
+  {
+    display.wakeup();
+  }
+  displayLogoAndMsg("Waking Up......", 4000);
+  startGPS();      
+  deviceState = DEVICE_STATE_SEND;   
+}
+
 static void prepareTxFrame(uint8_t port)
 {
   /*appData size is LORAWAN_APP_DATA_MAX_SIZE which is defined in "commissioning.h".
@@ -572,20 +597,12 @@ void userKey(void)
     {
       if (sleepMode)
       {        
-        display.wakeup();
-        displayLogoAndMsg("Waking Up......", 4000);
-        startGPS();      
-        deviceState = DEVICE_STATE_SEND;   
+        switchModeOutOfSleep();  
       }
       else
       {
-        display.wakeup();
-        displayLogoAndMsg("Sleeping....", 4000);         
-        display.sleep();
-        stopGPS();     
-        deviceState = DEVICE_STATE_SLEEP;   
-      }
-      sleepMode = !sleepMode;      
+        switchModeToSleep(); 
+      }            
     }
   }
 }
