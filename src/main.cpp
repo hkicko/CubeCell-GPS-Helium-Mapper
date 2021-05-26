@@ -17,6 +17,11 @@ Air530Class                   GPS;
 Air530ZClass                  GPS;
 #endif
 
+// Commend out/uncomment this line to disable/enable the auto sleep/wake up by vibration sensor feature
+//#define VIBR_SENSOR           GPIO7     // Change the pin where the sensor is connected if different
+// Comment out/uncomment this line to disable/enable the functionality  where the vibration sensor wakes the device from "deep" sleep (VIBR_SENSOR must be enabled)
+//#define VIBR_WAKE_FROM_SLEEP  
+
 #define MOVING_UPDATE_RATE    5000      // Update rate when moving
 #define STOPPED_UPDATE_RATE   60000     // Update rate when stopped
 #define MAX_GPS_WAIT          300000    // Max time to wait for GPS before going to sleep
@@ -601,6 +606,44 @@ static void prepareTxFrame(uint8_t port)
   #endif
 }
 
+#ifdef VIBR_SENSOR
+void vibration(void)
+{
+  detachInterrupt(VIBR_SENSOR);
+  stoppedCycle = 0;
+  
+  #ifdef DEBUG
+  Serial.println("Vibration detected");
+  switch (deviceState)
+  {
+    case DEVICE_STATE_SLEEP:
+      Serial.println("Curent State = SLEEP");
+      break;
+    case DEVICE_STATE_SEND:
+      Serial.println("Curent State = SEND");
+      break;
+    case DEVICE_STATE_CYCLE:
+      Serial.println("Current State = CYCLE");
+      break;    
+  }
+  #endif
+  
+  if (sleepMode)
+  {
+    #ifdef VIBR_WAKE_FROM_SLEEP    
+    switchModeOutOfSleep();
+    #endif
+  }
+  else
+  {
+    if (deviceState == DEVICE_STATE_SLEEP)
+    {
+      deviceState = DEVICE_STATE_SEND; 
+    }  
+  }
+}
+#endif
+
 void userKey(void)
 {
   delay(10);
@@ -660,6 +703,10 @@ void setup()
   //Setup user button - this must be after LoRaWAN.ifskipjoin(), because the button is used there to cancel stored settings load and initiate a new join
   pinMode(P3_3, INPUT);
   attachInterrupt(P3_3, userKey, FALLING);   
+
+  #ifdef VIBR_SENSOR
+  pinMode(VIBR_SENSOR, INPUT);
+  #endif
 }
 
 void loop()
@@ -762,6 +809,10 @@ void loop()
           Serial.print("Speed = ");
           Serial.print(avgSpeed);
           Serial.println(" STOPPED");
+          #endif
+          // Schedule wake up by vibration if vibration sensor is enabled/available
+          #ifdef VIBR_SENSOR
+          attachInterrupt(VIBR_SENSOR, vibration, FALLING);
           #endif
           #ifdef MAX_STOPPED_CYCLES
           // Auto sleep mode - if stopped for too many cycles, go to sleep

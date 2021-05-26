@@ -10,6 +10,12 @@ The initial settings are - send every 5 seconds while moving, every minute when 
 A quick press on the user button puts the GPS in a sleep mode.  
 Pressing the user button while in sleep mode wakes it up and resumes normal operation.
 
+Revision changes:
+- Added vibration sensor wake up 
+- Added Auto Sleep after stopped for too long 
+- Added Auto Sleep when wait for GPS is too long.
+- Added Air530Z GPS support for board version 1.1
+
 # Uploading the code
 
 - Install Serial Driver
@@ -25,6 +31,9 @@ https://marketplace.visualstudio.com/items?itemName=platformio.platformio-ide
 - Clone this repository and open the folder
 
 Edit file main.cpp in folder \src.
+
+Comment out/uncomment the appropriate line for your board version (for GPS Air530 or Air530Z)
+Comment out/uncomment the #define lines for VIBR_SENSOR, VIBR_WAKE_FROM_SLEEP, MAX_STOPPED_CYCLES and edit the values for the timers if desired 
 
 Enter DevEUI(msb), AppEUI(msb), and AppKey(msb) from Helium Console, at the respective places in main.cpp. The values must be in MSB format. From console press the expand button to get the ID's as shown below.
 
