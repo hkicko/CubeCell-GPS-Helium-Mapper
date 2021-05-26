@@ -19,6 +19,7 @@ Air530ZClass                  GPS;
 
 #define MOVING_UPDATE_RATE    5000      // Update rate when moving
 #define STOPPED_UPDATE_RATE   60000     // Update rate when stopped
+#define MAX_GPS_WAIT          300000    // Max time to wait for GPS before going to sleep
 
 /*
   How many past readings to use for avg speed calc.
@@ -513,6 +514,14 @@ void switchModeOutOfSleep(bool wakeupDisplay = true)
   deviceState = DEVICE_STATE_SEND;   
 }
 
+void autoSleepIfNoGPS()
+{
+  if (millis() - gpsSearchStart > MAX_GPS_WAIT)
+  {
+    switchModeToSleep(false);
+  }
+}
+
 static void prepareTxFrame(uint8_t port)
 {
   /*appData size is LORAWAN_APP_DATA_MAX_SIZE which is defined in "commissioning.h".
@@ -718,6 +727,7 @@ void loop()
         {
           display.wakeup(); // We can come here after a longer pause (like when stopped or sleeping) and that's why we need to wakeup the display
           displayGPSWaitWithCounter();
+          autoSleepIfNoGPS(); // If the wait for GPS is too long, automatically go to sleep
         }   
       }
       break;
