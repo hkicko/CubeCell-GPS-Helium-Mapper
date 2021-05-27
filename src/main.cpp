@@ -24,6 +24,7 @@ Air530ZClass                  GPS;
 
 #define MOVING_UPDATE_RATE    5000      // Update rate when moving
 #define STOPPED_UPDATE_RATE   60000     // Update rate when stopped
+#define SLEEPING_UPDATE_RATE  21600000  // Update every 6hrs when sleeping
 #define MAX_GPS_WAIT          300000    // Max time to wait for GPS before going to sleep
 //#define MAX_STOPPED_CYCLES    2         // Max consecutive stopped cycles before going to sleep
 
@@ -506,7 +507,7 @@ void switchModeToSleep(bool wakeupDisplay = true)
   displayLogoAndMsg("Sleeping....", 4000);         
   display.sleep();
   stopGPS();        
-  deviceState = DEVICE_STATE_SLEEP;   
+  deviceState = DEVICE_STATE_CYCLE;   
   stoppedCycle = 0;
 }
 
@@ -737,7 +738,7 @@ void loop()
     {
       if (sleepMode) // User pressed the button while we were waiting for the next send timer 
       {
-        deviceState = DEVICE_STATE_SLEEP; // Set state to Sleep and exit
+        deviceState = DEVICE_STATE_CYCLE; // Send to Cycle so it could setup a sleep timer if not done yet
       }
       else 
       {  
@@ -787,7 +788,16 @@ void loop()
     {
       loopingInSend = false;
       // Schedule next packet transmission
-      if (!sleepMode) 
+      if (sleepMode) 
+      {      
+          stoppedCycle = 0;
+          appTxDutyCycle = SLEEPING_UPDATE_RATE;
+          // Schedule wake up by vibration if vibration sensor is enabled/available
+          #ifdef VIBR_SENSOR
+          attachInterrupt(VIBR_SENSOR, vibration, FALLING);
+          #endif
+      }
+      else
       {
         if (onTheMove()) 
         {
@@ -818,18 +828,19 @@ void loop()
           // Auto sleep mode - if stopped for too many cycles, go to sleep
           if (stoppedCycle > MAX_STOPPED_CYCLES)
           {
-            switchModeToSleep();
+            sleepMode = true; 
+            display.wakeup();  
+            displayLogoAndMsg("Sleeping....", 4000);         
+            display.sleep();
+            stopGPS();     
+            appTxDutyCycle = SLEEPING_UPDATE_RATE;
           }
           #endif
-        }
-
-        if (!sleepMode) // Only schedule next if not going to sleep
-        {
-          txDutyCycleTime = appTxDutyCycle + randr(0, APP_TX_DUTYCYCLE_RND);
-          LoRaWAN.cycle(txDutyCycleTime);
-        }
+        }        
       }  
       
+      txDutyCycleTime = appTxDutyCycle + randr(0, APP_TX_DUTYCYCLE_RND);
+      LoRaWAN.cycle(txDutyCycleTime);        
       deviceState = DEVICE_STATE_SLEEP;
       break;
     }
