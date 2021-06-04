@@ -26,6 +26,7 @@ Air530ZClass                  GPS;
 #define STOPPED_UPDATE_RATE   60000     // Update rate when stopped
 #define SLEEPING_UPDATE_RATE  21600000  // Update every 6hrs when sleeping
 #define MAX_GPS_WAIT          300000    // Max time to wait for GPS before going to sleep
+#define MIN_STOPPED_CYCLES    5         // How many consecutive MOVING_UPDATE_RATE cycles after detecting no movement we should switch to STOPPED_UPDATE_RATE - this is to improve the experience in walk mode
 //#define MAX_STOPPED_CYCLES    2         // Max consecutive stopped cycles before going to sleep
 
 /*
@@ -199,7 +200,7 @@ void clearSpeedHistory()
   {
     speedHistory[i] = 0;
   }
-  avgSpeed = 0;
+  avgSpeed            = 0;
   speedHistoryPointer = 0;
   spdHistBuffFull     = 0;
 }
@@ -357,10 +358,61 @@ void printGPSInfo()
 }
 #endif
 
+// Call this from other display methods (assumes the display is initialized and awake)
+void displayBatteryLevel()
+{
+  //get Battery Level 1-254 Returned by BoardGetBatteryLevel
+  /*                                0: USB,
+  *                                 1: Min level,
+  *                                 x: level
+  *                               254: fully charged,
+  *                               255: Error
+  */
+  //uint16_t batteryVoltage = getBatteryVoltage();
+  uint8_t batteryLevel = BoardGetBatteryLevel();
+  float_t batteryLevelPct = ((float_t)batteryLevel - BAT_LEVEL_EMPTY) * 100 / (BAT_LEVEL_FULL - BAT_LEVEL_EMPTY);
+  
+  // #ifdef DEBUG
+  // Serial.println();
+  // Serial.print("Bat V: ");
+  // Serial.println(batteryVoltage);
+  // Serial.print("Bat Lvl: ");
+  // Serial.print(batteryLevel);
+  // Serial.print(", ");  
+  // Serial.println(batteryLevelPct);
+  // Serial.println();
+  // #endif
+
+  char str[30];  
+  int index;
+
+  switch (batteryLevel)
+  {
+    case 0:
+      index = sprintf(str, "%s", "USB"); 
+      break;
+    case BAT_LEVEL_EMPTY: 
+      index = sprintf(str, "%s", "LOW"); 
+      break;
+    case 255:
+      index = sprintf(str, "%s", "ERR"); 
+      break;
+    default:
+      index = sprintf(str, "%3u%%", (uint8_t)batteryLevelPct);        
+      break;
+  }  
+  str[index] = 0;
+
+  display.setFont(ArialMT_Plain_10);
+  display.setTextAlignment(TEXT_ALIGN_RIGHT);
+  display.drawString(128, 0, str);
+}
+
 void displayLogoAndMsg(String msg, uint32_t wait_ms)
 {
   display.clear();
   display.drawXbm(0, 0, 128, 42, helium_logo_bmp);
+  displayBatteryLevel();
   display.setTextAlignment(TEXT_ALIGN_CENTER);
   display.setFont(ArialMT_Plain_16);
   display.drawString(64, 54-16/2, msg);
@@ -532,7 +584,7 @@ void autoSleepIfNoGPS()
   }
 }
 
-static void prepareTxFrame(uint8_t port)
+bool prepareTxFrame(uint8_t port)
 {
   /*appData size is LORAWAN_APP_DATA_MAX_SIZE which is defined in "commissioning.h".
     appDataSize max value is LORAWAN_APP_DATA_MAX_SIZE.
@@ -544,10 +596,15 @@ static void prepareTxFrame(uint8_t port)
 
   uint32_t  lat, lon;
   int       alt, course, speed, hdop, sats;
-  float     batteryLevel;
-     
+       
   lat     = (uint32_t)(GPS.location.lat() * 1E7);
   lon     = (uint32_t)(GPS.location.lng() * 1E7);
+
+  if (lat == 0 || lon == 0)
+  {
+    return false;
+  }
+
   alt     = (uint16_t)GPS.altitude.meters();
   course  = GPS.course.deg();
   speed   = (uint16_t)avgSpeed;  
@@ -555,12 +612,7 @@ static void prepareTxFrame(uint8_t port)
   hdop    = GPS.hdop.hdop();
 
   uint16_t batteryVoltage = getBatteryVoltage();
-  
-  //get Battery Level 1-254 Returned by BoardGetBatteryLevel
-  batteryLevel = (BoardGetBatteryLevel());
-  //Convert to %
-  batteryLevel = (batteryLevel / 254) * 100;
-  
+    
   //Build Payload
   unsigned char *puc;
   appDataSize = 0;
@@ -594,6 +646,11 @@ static void prepareTxFrame(uint8_t port)
   Serial.print(speed);
   Serial.println(" kph");
 
+  //get Battery Level 1-254 Returned by BoardGetBatteryLevel
+  uint8_t batteryLevel = BoardGetBatteryLevel();
+  //Convert to %
+  batteryLevel = (uint8_t)((float_t)batteryLevel - BAT_LEVEL_EMPTY) * 100 / (BAT_LEVEL_FULL - BAT_LEVEL_EMPTY);
+
   Serial.print("Battery Level ");
   Serial.print(batteryLevel);
   Serial.println(" %");
@@ -605,6 +662,8 @@ static void prepareTxFrame(uint8_t port)
   Serial.println(sleepMode);
   Serial.println();  
   #endif
+  
+  return true;
 }
 
 #ifdef VIBR_SENSOR
@@ -757,14 +816,16 @@ void loop()
           // Only send if it had enough time to stabilize, otherwise just display on screen
           if (enoughSpeedHistory()) 
           {        
-            prepareTxFrame(appPort);
-            if (!sleepMode) // In case user pressed the button while prepareTxFrame() was running
-            {      
-              LoRaWAN.displaySending();
-              LoRaWAN.send();                  
+            if (prepareTxFrame(appPort)) // Don't send bad data (the method will return false if GPS coordinates are 0)
+            {
+              if (!sleepMode) // In case user pressed the button while prepareTxFrame() was running
+              {      
+                LoRaWAN.displaySending();
+                LoRaWAN.send();                  
+              }
+              display.sleep();
+              VextOFF();
             }
-            display.sleep();
-            VextOFF();
             deviceState = DEVICE_STATE_CYCLE; // Schedule next send
           }
           else 
@@ -813,29 +874,33 @@ void loop()
         else 
         {
           stoppedCycle++;
-          appTxDutyCycle = STOPPED_UPDATE_RATE;
-          #ifdef DEBUG
-          Serial.println();
-          Serial.print("Speed = ");
-          Serial.print(avgSpeed);
-          Serial.println(" STOPPED");
-          #endif
-          // Schedule wake up by vibration if vibration sensor is enabled/available
-          #ifdef VIBR_SENSOR
-          attachInterrupt(VIBR_SENSOR, vibration, FALLING);
-          #endif
-          #ifdef MAX_STOPPED_CYCLES
-          // Auto sleep mode - if stopped for too many cycles, go to sleep
-          if (stoppedCycle > MAX_STOPPED_CYCLES)
-          {
-            sleepMode = true; 
-            display.wakeup();  
-            displayLogoAndMsg("Sleeping....", 4000);         
-            display.sleep();
-            stopGPS();     
-            appTxDutyCycle = SLEEPING_UPDATE_RATE;
+                    
+          if (stoppedCycle > MIN_STOPPED_CYCLES) // Do not switch to STOPPED too fast, wait a few more cycles for movement to resume and only if it does not, then switch
+          {          
+            appTxDutyCycle = STOPPED_UPDATE_RATE;
+            #ifdef DEBUG
+            Serial.println();
+            Serial.print("Speed = ");
+            Serial.print(avgSpeed);
+            Serial.println(" STOPPED");
+            #endif
+            // Schedule wake up by vibration if vibration sensor is enabled/available
+            #ifdef VIBR_SENSOR
+            attachInterrupt(VIBR_SENSOR, vibration, FALLING);
+            #endif
+            #ifdef MAX_STOPPED_CYCLES
+            // Auto sleep mode - if stopped for too many cycles, go to sleep
+            if (stoppedCycle > MAX_STOPPED_CYCLES)
+            {
+              sleepMode = true; 
+              display.wakeup();  
+              displayLogoAndMsg("Sleeping....", 4000);         
+              display.sleep();
+              stopGPS();     
+              appTxDutyCycle = SLEEPING_UPDATE_RATE;
+            }
+            #endif
           }
-          #endif
         }        
       }  
       
