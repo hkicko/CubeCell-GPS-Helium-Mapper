@@ -85,8 +85,9 @@ function Decoder(bytes, port) {
     speed:
       (((bytes[8]))/1.609).toFixed(2), 
     battery:
-      (((bytes[10])*0.2)/10).toFixed(2)
-    
+      (((bytes[10])*0.2)/10).toFixed(2),
+    accuracy:
+      2.5
   };
 }
 
