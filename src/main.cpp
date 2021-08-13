@@ -860,10 +860,11 @@ void loop()
       }
       else
       {
+        appTxDutyCycle = MOVING_UPDATE_RATE;
+
         if (onTheMove()) 
         {
           stoppedCycle = 0;
-          appTxDutyCycle = MOVING_UPDATE_RATE;
           #ifdef DEBUG
           Serial.println();
           Serial.print("Speed = ");
