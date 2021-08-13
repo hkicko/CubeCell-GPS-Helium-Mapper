@@ -572,7 +572,7 @@ void switchModeOutOfSleep(bool wakeupDisplay = true)
   }
   displayLogoAndMsg("Waking Up......", 4000);
   startGPS();      
-  deviceState = DEVICE_STATE_SEND;   
+  deviceState = DEVICE_STATE_CYCLE;   
   stoppedCycle = 0;
 }
 
