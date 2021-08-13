@@ -25,7 +25,7 @@ Air530ZClass                  GPS;
 #define MOVING_UPDATE_RATE    5000      // Update rate when moving
 #define STOPPED_UPDATE_RATE   60000     // Update rate when stopped
 #define SLEEPING_UPDATE_RATE  21600000  // Update every 6hrs when sleeping
-#define MAX_GPS_WAIT          300000    // Max time to wait for GPS before going to sleep
+#define MAX_GPS_WAIT          360000    // Max time to wait for GPS before going to sleep
 #define MIN_STOPPED_CYCLES    5         // How many consecutive MOVING_UPDATE_RATE cycles after detecting no movement we should switch to STOPPED_UPDATE_RATE - this is to improve the experience in walk mode
 //#define MAX_STOPPED_CYCLES    2         // Max consecutive stopped cycles before going to sleep
 
