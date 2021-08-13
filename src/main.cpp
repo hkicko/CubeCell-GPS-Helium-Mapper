@@ -707,10 +707,10 @@ void vibration(void)
 void userKey(void)
 {
   delay(10);
-  if (digitalRead(P3_3) == 0)
+  if (digitalRead(USER_KEY) == LOW)
   {
     uint16_t keyDownTime = 0;
-    while (digitalRead(P3_3) == 0)
+    while (digitalRead(USER_KEY) == LOW)
     {
       delay(1);
       keyDownTime++;
@@ -761,8 +761,8 @@ void setup()
     startGPS(); 
   }
   //Setup user button - this must be after LoRaWAN.ifskipjoin(), because the button is used there to cancel stored settings load and initiate a new join
-  pinMode(P3_3, INPUT);
-  attachInterrupt(P3_3, userKey, FALLING);   
+  pinMode(USER_KEY, INPUT);
+  attachInterrupt(USER_KEY, userKey, FALLING);   
 
   #ifdef VIBR_SENSOR
   pinMode(VIBR_SENSOR, INPUT);
