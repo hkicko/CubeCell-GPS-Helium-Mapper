@@ -427,26 +427,6 @@ void displayLogoAndMsg(String msg, uint32_t wait_ms)
   }    
 }
 
-bool loraJoined()
-{
-  bool joined = false;
-  MibRequestConfirm_t mibReq;
-  LoRaMacStatus_t status;
-
-  mibReq.Type = MIB_NETWORK_JOINED;
-  status = LoRaMacMibGetRequestConfirm(&mibReq);
-
-  if (status == LORAMAC_STATUS_OK)
-  {
-    if (mibReq.Param.IsNetworkJoined == true)
-    {
-      joined = true;
-    }
-  }
-
-  return joined;
-}
-
 void displayJoinTimer()
 {
   char str[30];
@@ -913,7 +893,7 @@ void loop()
     case DEVICE_STATE_SLEEP:
     {
       loopingInSend = false;
-      if (!loraJoined())
+      if (!IsLoRaMacNetworkJoined)
       {
         displayJoinTimer(); // When not joined yet, it will display the seconds passed, so the user knows it is doing something
       }
