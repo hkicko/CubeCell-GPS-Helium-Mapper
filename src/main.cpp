@@ -5,7 +5,7 @@
 #include "Arduino.h"
 #include "GPS_Air530.h" // Enable this for board version 1.0 and 1.0_1
 //#include "GPS_Air530Z.h" // Enable this for board version 1.1
-#include "cubecell_SSD1306Wire.h"
+#include "HT_SSD1306Wire.h"
 
 //#define DEBUG // Enable/Disable debug output over the serial console
 
