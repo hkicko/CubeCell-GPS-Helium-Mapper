@@ -29,6 +29,7 @@ Air530ZClass                  GPS;
 #define MAX_GPS_WAIT          660000    // Max time to wait for GPS before going to sleep
 #define MIN_STOPPED_CYCLES    5         // How many consecutive MOVING_UPDATE_RATE cycles after detecting no movement we should switch to STOPPED_UPDATE_RATE - this is to improve the experience in walk mode
 //#define MAX_STOPPED_CYCLES    8         // Max consecutive stopped cycles before going to sleep, keep in mind, the first MIN_STOPPED_CYCLES of these will be at MOVING_UPDATE_RATE and the next after that will be at STOPPED_UPDATE_RATE
+#define VBAT_CORRECTION       1.004     // Edit this for calibrating your battery voltage
 
 /*
   How many past readings to use for avg speed calc.
@@ -428,7 +429,7 @@ void displayBatteryLevel()
   else
   {
     batteryVoltage = getBatteryVoltage();
-    float_t batV = ((float_t)batteryVoltage * 1.004)/1000;  // Multiply by the appropriate value for your own device to adjust the measured value after calibration      
+    float_t batV = ((float_t)batteryVoltage * VBAT_CORRECTION)/1000;  // Multiply by the appropriate value for your own device to adjust the measured value after calibration
     index = sprintf(str, "%d.%02dV", (int)batV, fracPart(batV, 2));       
     
     // #ifdef DEBUG
@@ -752,7 +753,7 @@ bool prepareTxFrame(uint8_t port)
 
   detachInterrupt(USER_KEY); // reading battery voltage is messing up with the pin and driving it down, which simulates a long press for our interrupt handler 
 
-  uint16_t batteryVoltage = getBatteryVoltage();
+  uint16_t batteryVoltage = ((float_t)((float_t)((float_t)getBatteryVoltage() * VBAT_CORRECTION)  / 10) + .5);  
   
   //Build Payload
   unsigned char *puc;
@@ -780,7 +781,7 @@ bool prepareTxFrame(uint8_t port)
   
   appData[appDataSize++] = (uint8_t)(sats & 0xFF);
 
-  appData[appDataSize++] = (uint8_t)(((batteryVoltage-2000)/10) & 0xFF);
+  appData[appDataSize++] = (uint8_t)((batteryVoltage-200) & 0xFF);
   
   #ifdef DEBUG
   Serial.print("Speed ");
@@ -796,7 +797,7 @@ bool prepareTxFrame(uint8_t port)
   Serial.print(batteryLevel);
   Serial.println(" %");
   
-  Serial.print("BatteryVoltage:");
+  Serial.print("BatteryVoltage: ");
   Serial.println(batteryVoltage);
 
   Serial.print("SleepMode = ");
