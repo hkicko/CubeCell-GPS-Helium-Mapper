@@ -9,7 +9,7 @@
 
 //#define DEBUG // Enable/Disable debug output over the serial console
 
-extern SSD1306Wire            display; 
+extern SSD1306Wire            display;    // Defined in LoRaWan_APP.cpp
 #ifdef GPS_Air530_H
 Air530Class                   GPS;
 #endif
@@ -25,9 +25,9 @@ Air530ZClass                  GPS;
 #define MOVING_UPDATE_RATE    5000      // Update rate when moving
 #define STOPPED_UPDATE_RATE   60000     // Update rate when stopped
 #define SLEEPING_UPDATE_RATE  21600000  // Update every 6hrs when sleeping
-#define MAX_GPS_WAIT          360000    // Max time to wait for GPS before going to sleep
+#define MAX_GPS_WAIT          660000    // Max time to wait for GPS before going to sleep
 #define MIN_STOPPED_CYCLES    5         // How many consecutive MOVING_UPDATE_RATE cycles after detecting no movement we should switch to STOPPED_UPDATE_RATE - this is to improve the experience in walk mode
-//#define MAX_STOPPED_CYCLES    2         // Max consecutive stopped cycles before going to sleep
+//#define MAX_STOPPED_CYCLES    8         // Max consecutive stopped cycles before going to sleep, keep in mind, the first MIN_STOPPED_CYCLES of these will be at MOVING_UPDATE_RATE and the next after that will be at STOPPED_UPDATE_RATE
 
 /*
   How many past readings to use for avg speed calc.
@@ -72,7 +72,7 @@ DeviceClass_t  loraWanClass = LORAWAN_CLASS;
 /*the application data transmission duty cycle.  value in [ms].*/
 /* Start with non-zero value, for the first transmission with previously stored JOIN,
  * but it will be changed later depending on the mode */
-uint32_t appTxDutyCycle = 1000; 
+uint32_t appTxDutyCycle = 1000;
 
 /*OTAA or ABP*/
 bool overTheAirActivation = LORAWAN_NETMODE;
@@ -539,11 +539,11 @@ void switchModeToSleep(bool wakeupDisplay = true)
   if (wakeupDisplay)
   {
     display.wakeup();
-  }  
-  displayLogoAndMsg("Sleeping....", 4000);         
+  } 
+  displayLogoAndMsg("Sleeping....", 4000);
   display.sleep();
   stopGPS();        
-  deviceState = DEVICE_STATE_CYCLE;   
+  deviceState = DEVICE_STATE_CYCLE;  
   stoppedCycle = 0;
 }
 
@@ -556,8 +556,10 @@ void switchModeOutOfSleep(bool wakeupDisplay = true)
   }
   displayLogoAndMsg("Waking Up......", 4000);
   startGPS();      
-  deviceState = DEVICE_STATE_CYCLE;   
+  deviceState = DEVICE_STATE_CYCLE;
   stoppedCycle = 0;
+  loopingInSend = false;
+  clearSpeedHistory();
 }
 
 void autoSleepIfNoGPS()
@@ -580,7 +582,7 @@ bool prepareTxFrame(uint8_t port)
 
   uint32_t  lat, lon;
   int       alt, course, speed, hdop, sats;
-       
+  
   lat     = (uint32_t)(GPS.location.lat() * 1E7);
   lon     = (uint32_t)(GPS.location.lng() * 1E7);
 
@@ -596,7 +598,7 @@ bool prepareTxFrame(uint8_t port)
   hdop    = GPS.hdop.hdop();
 
   uint16_t batteryVoltage = getBatteryVoltage();
-    
+  
   //Build Payload
   unsigned char *puc;
   appDataSize = 0;
@@ -706,12 +708,12 @@ void userKey(void)
     {
       if (sleepMode)
       {        
-        switchModeOutOfSleep();  
+        switchModeOutOfSleep();
       }
       else
       {
-        switchModeToSleep(); 
-      }            
+        switchModeToSleep();
+      }
     }
   }
 }
@@ -746,7 +748,7 @@ void setup()
   }
   //Setup user button - this must be after LoRaWAN.ifskipjoin(), because the button is used there to cancel stored settings load and initiate a new join
   pinMode(USER_KEY, INPUT);
-  attachInterrupt(USER_KEY, userKey, FALLING);   
+  attachInterrupt(USER_KEY, userKey, FALLING);  
 
   #ifdef VIBR_SENSOR
   pinMode(VIBR_SENSOR, INPUT);
@@ -786,7 +788,7 @@ void loop()
       else 
       {  
         cycleGPS(); // Read anything queued in the GPS Serial buffer, parse it and populate the internal variables with the latest GPS data
-      
+        
         if (!loopingInSend) // We are just getting here from some other state
         {
           loopingInSend = true; // We may be staying here for a while, but we want to reset the below variables only once when we enter.
@@ -794,16 +796,16 @@ void loop()
             and only show it if there was more than 1s without GPS fix and correctly display the time passed on it */
           gpsSearchStart = lastScreenPrint = millis(); 
         }
-
+        
         if (GPS.location.age() < 1000) 
         {
           // Only send if it had enough time to stabilize, otherwise just display on screen
           if (enoughSpeedHistory()) 
-          {        
+          {
             if (prepareTxFrame(appPort)) // Don't send bad data (the method will return false if GPS coordinates are 0)
             {
               if (!sleepMode) // In case user pressed the button while prepareTxFrame() was running
-              {      
+              {
                 LoRaWAN.displaySending();
                 LoRaWAN.send();                  
               }
@@ -833,8 +835,8 @@ void loop()
     {
       loopingInSend = false;
       // Schedule next packet transmission
-      if (sleepMode) 
-      {      
+      if (sleepMode)
+      {
           stoppedCycle = 0;
           appTxDutyCycle = SLEEPING_UPDATE_RATE;
           // Schedule wake up by vibration if vibration sensor is enabled/available
@@ -846,7 +848,7 @@ void loop()
       {
         appTxDutyCycle = MOVING_UPDATE_RATE;
 
-        if (onTheMove()) 
+        if (onTheMove())
         {
           stoppedCycle = 0;
           #ifdef DEBUG
@@ -855,13 +857,13 @@ void loop()
           Serial.print(avgSpeed);
           Serial.println(" MOVING");
           #endif
-        }  
-        else 
+        }
+        else
         {
           stoppedCycle++;
-                    
+          
           if (stoppedCycle > MIN_STOPPED_CYCLES) // Do not switch to STOPPED too fast, wait a few more cycles for movement to resume and only if it does not, then switch
-          {          
+          { 
             appTxDutyCycle = STOPPED_UPDATE_RATE;
             #ifdef DEBUG
             Serial.println();
@@ -877,20 +879,20 @@ void loop()
             // Auto sleep mode - if stopped for too many cycles, go to sleep
             if (stoppedCycle > MAX_STOPPED_CYCLES)
             {
-              sleepMode = true; 
-              display.wakeup();  
-              displayLogoAndMsg("Sleeping....", 4000);         
+              sleepMode = true;
+              display.wakeup();
+              displayLogoAndMsg("Sleeping....", 4000);
               display.sleep();
-              stopGPS();     
+              stopGPS();
               appTxDutyCycle = SLEEPING_UPDATE_RATE;
             }
             #endif
           }
-        }        
-      }  
+        }
+      }
       
       txDutyCycleTime = appTxDutyCycle + randr(0, APP_TX_DUTYCYCLE_RND);
-      LoRaWAN.cycle(txDutyCycleTime);        
+      LoRaWAN.cycle(txDutyCycleTime);
       deviceState = DEVICE_STATE_SLEEP;
       break;
     }
@@ -902,16 +904,16 @@ void loop()
         displayJoinTimer(); // When not joined yet, it will display the seconds passed, so the user knows it is doing something
       }
       else
-      {        
+      {
         if (!sleepMode && onTheMove()) // When not in sleep mode and moving - display the current GPS every second
         {
           displayGPSInfoEverySecond(true);                    
-        }       
+        }     
         else // either going into deep sleep or stopped - turn display off
         {
           display.sleep();
           VextOFF();
-        }         
+        }
       }
       //cycleGPS();
       LoRaWAN.sleep();   
