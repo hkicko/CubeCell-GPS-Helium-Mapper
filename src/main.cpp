@@ -623,7 +623,7 @@ bool prepareTxFrame(uint8_t port)
   
   appData[appDataSize++] = (uint8_t)(sats & 0xFF);
 
-  appData[appDataSize++] = (uint8_t)((batteryVoltage / 20) & 0xFF);
+  appData[appDataSize++] = (uint8_t)(((batteryVoltage-2000)/10) & 0xFF);
   
   #ifdef DEBUG
   Serial.print("Speed ");
