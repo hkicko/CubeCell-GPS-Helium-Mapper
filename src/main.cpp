@@ -10,6 +10,7 @@
 //#define DEBUG // Enable/Disable debug output over the serial console
 
 extern SSD1306Wire            display;    // Defined in LoRaWan_APP.cpp
+extern uint8_t                isDispayOn; // Defined in LoRaWan_APP.cpp
 #ifdef GPS_Air530_H
 Air530Class                   GPS;
 #endif
@@ -169,6 +170,8 @@ const uint8_t helium_logo_bmp[] PROGMEM = {
 
 bool      sleepMode           = false;
 bool      loopingInSend       = false;
+bool      menuMode            = false;
+bool      screenOffMode       = false; // Enable normal operation with the screen off - for more battery saving
 uint32_t  lastScreenPrint     = 0;
 uint32_t  joinStart           = 0;
 uint32_t  gpsSearchStart      = 0;
@@ -178,6 +181,28 @@ uint8_t   spdHistBuffFull     = 0; /* Counter to tell us how full the buffer is 
                                     could send and we use that instead of waiting a specific time for the readings to "stabilize" */
 float     avgSpeed            = 0;
 int       stoppedCycle        = 0;
+int       currentMenu         = 0;
+uint32_t  movingUpdateRate    = MOVING_UPDATE_RATE;
+bool      displayBatPct       = false;
+enum eDeviceState_LoraWan stateAfterMenu;
+
+
+#define MENU_CNT 7
+
+char* menu[MENU_CNT] = {"Screen OFF", "Sleep", "Debug Info", "Faster Upd", "Slower Upd", "Reset GPS", "Bat V/%"};
+
+enum eMenuEntries
+{
+  SCREEN_OFF,
+  SLEEP,
+  DEBUG_INFO,
+  FASTER_UPD,
+  SLOWER_UPD,
+  RESET_GPS,
+  BAT_V_PCT
+};
+
+void userKey();
 
 int32_t fracPart(double val, int n)
 {
@@ -365,47 +390,59 @@ void printGPSInfo()
 // Call this from other display methods (assumes the display is initialized and awake)
 void displayBatteryLevel()
 {
-  //get Battery Level 1-254 Returned by BoardGetBatteryLevel
-  /*                                0: USB,
-  *                                 1: Min level,
-  *                                 x: level
-  *                               254: fully charged,
-  *                               255: Error
-  */
-  //uint16_t batteryVoltage = getBatteryVoltage();
-  uint8_t batteryLevel = BoardGetBatteryLevel();
-  float_t batteryLevelPct = ((float_t)batteryLevel - BAT_LEVEL_EMPTY) * 100 / (BAT_LEVEL_FULL - BAT_LEVEL_EMPTY);
-  
-  // #ifdef DEBUG
-  // Serial.println();
-  // Serial.print("Bat V: ");
-  // Serial.println(batteryVoltage);
-  // Serial.print("Bat Lvl: ");
-  // Serial.print(batteryLevel);
-  // Serial.print(", ");  
-  // Serial.println(batteryLevelPct);
-  // Serial.println();
-  // #endif
-
+  uint16_t batteryVoltage;
+  uint8_t batteryLevel;
+  float_t batteryLevelPct;
   char str[30];  
   int index;
+  
+  detachInterrupt(USER_KEY); // reading battery voltage is messing up with the pin and driving it down, which simulates a long press for our interrupt handler 
 
-  switch (batteryLevel)
+  if (displayBatPct)
+  {    
+    //get Battery Level 1-254 Returned by BoardGetBatteryLevel
+    /*                                0: USB,
+    *                                 1: Min level,
+    *                                 x: level
+    *                               254: fully charged,
+    *                               255: Error
+    */
+    batteryLevel = BoardGetBatteryLevel();
+    batteryLevelPct = ((float_t)batteryLevel - BAT_LEVEL_EMPTY) * 100 / (BAT_LEVEL_FULL - BAT_LEVEL_EMPTY);
+    switch (batteryLevel)
+    {
+      case 0:
+        index = sprintf(str, "%s", "USB"); 
+        break;
+      case BAT_LEVEL_EMPTY: 
+        index = sprintf(str, "%s", "LOW"); 
+        break;
+      case 255:
+        index = sprintf(str, "%s", "ERR"); 
+        break;
+      default:
+        index = sprintf(str, "%3u%%", (uint8_t)batteryLevelPct);        
+        break;
+    }  
+  }
+  else
   {
-    case 0:
-      index = sprintf(str, "%s", "USB"); 
-      break;
-    case BAT_LEVEL_EMPTY: 
-      index = sprintf(str, "%s", "LOW"); 
-      break;
-    case 255:
-      index = sprintf(str, "%s", "ERR"); 
-      break;
-    default:
-      index = sprintf(str, "%3u%%", (uint8_t)batteryLevelPct);        
-      break;
-  }  
+    batteryVoltage = getBatteryVoltage();
+    float_t batV = ((float_t)batteryVoltage * 1.004)/1000;  // Multiply by the appropriate value for your own device to adjust the measured value after calibration      
+    index = sprintf(str, "%d.%02dV", (int)batV, fracPart(batV, 2));       
+    
+    // #ifdef DEBUG
+    // Serial.println();
+    // Serial.print("Bat V: ");
+    // Serial.print(batteryVoltage); 
+    // Serial.print(" (");
+    // Serial.print(batV);
+    // Serial.println(")");
+    // #endif 
+  }
   str[index] = 0;
+
+  attachInterrupt(USER_KEY, userKey, FALLING);  // Attach again after voltage reading is done
 
   display.setFont(ArialMT_Plain_10);
   display.setTextAlignment(TEXT_ALIGN_RIGHT);
@@ -431,6 +468,22 @@ void displayLogoAndMsg(String msg, uint32_t wait_ms)
   }    
 }
 
+int8_t loraDataRate()
+{
+  MibRequestConfirm_t mibReq;
+  LoRaMacStatus_t status;
+  int8_t ret = -1;
+  
+  mibReq.Type = MIB_CHANNELS_DATARATE;
+  status = LoRaMacMibGetRequestConfirm( &mibReq );
+  if (status == LORAMAC_STATUS_OK)
+  {
+    ret = mibReq.Param.ChannelsDatarate;
+  }
+
+  return ret;
+}
+
 void displayJoinTimer()
 {
   char str[30];
@@ -453,20 +506,87 @@ void displayJoinTimer()
   }
 }
 
-void displayGPSInfoEverySecond(bool wakeupDisplay)
+void displayGPSInfoEverySecond()
 {
   if ((millis() - lastScreenPrint) > 1000) 
   {            
     #ifdef DEBUG
     printGPSInfo();
-    #endif
-    if (wakeupDisplay)
+    if (screenOffMode)
     {
-      display.wakeup();
-    }    
-    displayGPSInfo();
+      delay(15);
+    }
+    #endif
+    if (!screenOffMode)
+    {
+      if (!isDispayOn)
+      {
+        display.wakeup();
+        isDispayOn = 1;
+      }    
+      displayGPSInfo();
+    }
     lastScreenPrint = millis();
   }
+}
+
+void displayMenu()
+{
+  int prev; 
+  int next; 
+  String currentOption = menu[currentMenu]; 
+  currentOption.toUpperCase();
+
+  prev = currentMenu - 1;
+
+  if (prev < 0)
+  {
+    prev = MENU_CNT - 1;
+  }
+
+  next = currentMenu + 1;
+
+  if (next >= MENU_CNT)
+  {
+    next = 0;
+  }
+
+  display.setFont(ArialMT_Plain_10);
+  display.setTextAlignment(TEXT_ALIGN_CENTER);
+  display.clear();
+  
+  display.drawString(64, 0, menu[prev]);   
+  display.setFont(ArialMT_Plain_16);
+  display.drawString(64, (display.getHeight() - 16) / 2, currentOption); 
+  display.setFont(ArialMT_Plain_10);
+  display.drawString(64, display.getHeight() - 10, menu[next]); 
+  displayBatteryLevel();
+  display.display();
+}
+
+void displayDebugInfo()
+{
+  char str[30];
+  int index; 
+
+  display.clear();  
+  display.setTextAlignment(TEXT_ALIGN_LEFT);
+  display.setFont(ArialMT_Plain_10);
+  index = sprintf(str,"%s: %u", "Update rate", movingUpdateRate);
+  str[index] = 0; 
+  display.drawString(0, 0, str);  
+  index = sprintf(str,"%s: %u", "loopingInSend", loopingInSend);
+  str[index] = 0; 
+  display.drawString(0, 10, str);  
+  index = sprintf(str,"%s: %u", "LoRaJoined", IsLoRaMacNetworkJoined);
+  str[index] = 0; 
+  display.drawString(0, 20, str);  
+  index = sprintf(str,"%s: %i", "DR", loraDataRate());
+  str[index] = 0; 
+  display.drawString(0, 30, str);    
+  display.display();
+
+  delay(4000);    
 }
 
 void startGPS()
@@ -510,6 +630,11 @@ void displayGPSWaitWithCounter()
 
   if ((millis() - lastScreenPrint) > 1000)
   {
+    if (!isDispayOn)
+    {
+      display.wakeup(); 
+      isDispayOn = 1;
+    }
     display.clear();
     display.drawXbm(0, 0, 128, 42, helium_logo_bmp);
     display.setFont(ArialMT_Plain_16);
@@ -533,28 +658,36 @@ void displayGPSWaitWithCounter()
   }  
 }
 
-void switchModeToSleep(bool wakeupDisplay = true)
+void switchModeToSleep()
 {
   sleepMode = true;
-  if (wakeupDisplay)
+  if (!screenOffMode)
   {
-    display.wakeup();
-  } 
-  displayLogoAndMsg("Sleeping....", 4000);
-  display.sleep();
+    if (!isDispayOn)
+    {
+      display.wakeup();
+      isDispayOn = 1;
+    } 
+    displayLogoAndMsg("Sleeping....", 4000);
+    display.sleep();
+    isDispayOn = 0;
+  }
   stopGPS();        
   deviceState = DEVICE_STATE_CYCLE;  
   stoppedCycle = 0;
 }
 
-void switchModeOutOfSleep(bool wakeupDisplay = true)
+void switchModeOutOfSleep()
 {
   sleepMode = false;
-  if (wakeupDisplay)
+  if (!isDispayOn)
   {
     display.wakeup();
+    isDispayOn = 1;
   }
   displayLogoAndMsg("Waking Up......", 4000);
+  display.clear();
+  display.display();
   startGPS();      
   deviceState = DEVICE_STATE_CYCLE;
   stoppedCycle = 0;
@@ -562,11 +695,31 @@ void switchModeOutOfSleep(bool wakeupDisplay = true)
   clearSpeedHistory();
 }
 
+void switchScrenOffMode()
+{
+  screenOffMode = true;  
+  //displayLogoAndMsg("Scren off....", 2000);          
+  VextOFF();
+  display.stop();
+  isDispayOn = 0;   
+}
+
+void switchScreenOnMode()
+{
+  screenOffMode = false;  
+  VextON();
+  display.init();
+  isDispayOn = 1;
+  displayLogoAndMsg("Screen on...", 1000);  
+  display.clear();
+  display.display();
+}
+
 void autoSleepIfNoGPS()
 {
   if (millis() - gpsSearchStart > MAX_GPS_WAIT)
   {
-    switchModeToSleep(false);
+    switchModeToSleep();
   }
 }
 
@@ -596,6 +749,8 @@ bool prepareTxFrame(uint8_t port)
   speed   = (uint16_t)avgSpeed;  
   sats    = GPS.satellites.value();
   hdop    = GPS.hdop.hdop();
+
+  detachInterrupt(USER_KEY); // reading battery voltage is messing up with the pin and driving it down, which simulates a long press for our interrupt handler 
 
   uint16_t batteryVoltage = getBatteryVoltage();
   
@@ -648,6 +803,7 @@ bool prepareTxFrame(uint8_t port)
   Serial.println(sleepMode);
   Serial.println();  
   #endif
+  attachInterrupt(USER_KEY, userKey, FALLING);  // Attach again after voltage reading is done 
   
   return true;
 }
@@ -691,6 +847,73 @@ void vibration(void)
 }
 #endif
 
+void executeMenu(void)
+{
+  switch (currentMenu)
+  {
+    case SCREEN_OFF:
+      switchScrenOffMode();
+      deviceState = stateAfterMenu;
+      menuMode = false;      
+      break;
+
+    case SLEEP:
+      switchModeToSleep();         
+      menuMode = false;
+      break;
+
+    case DEBUG_INFO:
+      displayDebugInfo();
+      deviceState = stateAfterMenu;
+      menuMode = false;
+      break;
+
+    case FASTER_UPD:
+      if (movingUpdateRate > 1000)
+      {
+        movingUpdateRate -= 1000;
+      }
+      deviceState = DEVICE_STATE_CYCLE;  
+      stoppedCycle = 0;
+      menuMode = false;
+      break;
+
+    case SLOWER_UPD:
+      if (movingUpdateRate < STOPPED_UPDATE_RATE)
+      {
+        movingUpdateRate += 1000;
+      }
+      deviceState = DEVICE_STATE_CYCLE;  
+      stoppedCycle = 0;
+      menuMode = false;
+      break;
+
+    case RESET_GPS:
+      stopGPS();
+      delay(1000);
+      startGPS();
+      deviceState = DEVICE_STATE_CYCLE;  
+      menuMode = false;
+      break;
+
+    case BAT_V_PCT:
+      displayBatPct = !displayBatPct;
+      deviceState = stateAfterMenu;
+      menuMode = false;
+      break;
+    
+    default:
+      menuMode = false;
+      deviceState = stateAfterMenu;
+      break;
+  }
+  if (!screenOffMode)
+  {
+    display.clear();
+    display.display();
+  }
+}
+
 void userKey(void)
 {
   delay(10);
@@ -701,7 +924,7 @@ void userKey(void)
     {
       delay(1);
       keyDownTime++;
-      if (keyDownTime >= 700)
+      if (keyDownTime >= 1000)
         break;
     }
 
@@ -711,9 +934,34 @@ void userKey(void)
       {        
         switchModeOutOfSleep();
       }
+      else if (screenOffMode)
+      {
+        switchScreenOnMode();
+      }
       else
       {
-        switchModeToSleep();
+        if (menuMode)
+        {
+          currentMenu++;
+          if (currentMenu >= MENU_CNT)
+          {
+            currentMenu = 0;
+          }
+        }
+        else
+        {
+          menuMode = true;
+          currentMenu = 0;
+          stateAfterMenu = deviceState;  
+          deviceState = DEVICE_STATE_SLEEP;
+        }        
+      }
+    }
+    else
+    {
+      if (menuMode)
+      {
+        executeMenu();
       }
     }
   }
@@ -731,6 +979,7 @@ void setup()
 
   // Display branding image. If we don't want that - the following 2 lines can be removed  
   display.init(); // displayMcuInit() will init the display, but if we want to show our logo before that, we need to init ourselves.   
+  isDispayOn = 1;
   displayLogoAndMsg("MAPPER", 4000);
 
   LoRaWAN.displayMcuInit(); // This inits and turns on the display  
@@ -782,7 +1031,12 @@ void loop()
     }
     case DEVICE_STATE_SEND:
     {
-      if (sleepMode) // User pressed the button while we were waiting for the next send timer 
+      if (menuMode) // User pressed the button while we were waiting for the next send timer
+      {
+        stateAfterMenu = deviceState; // If while waiting inside the menu, a Cycle timer ended and sent us here, after exiting the menu, don't waste time going back to Cycle, go directly to Send
+        deviceState = DEVICE_STATE_SLEEP;
+      }
+      else if (sleepMode)
       {
         deviceState = DEVICE_STATE_CYCLE; // Send to Cycle so it could setup a sleep timer if not done yet
       }
@@ -805,28 +1059,40 @@ void loop()
           {
             if (prepareTxFrame(appPort)) // Don't send bad data (the method will return false if GPS coordinates are 0)
             {
-              if (!sleepMode) // In case user pressed the button while prepareTxFrame() was running
-              {
-                LoRaWAN.displaySending();
+              if (!menuMode && !sleepMode) // In case user pressed the button while prepareTxFrame() was running
+              { 
+                if (!screenOffMode)
+                {
+                  LoRaWAN.displaySending();
+                }                
                 LoRaWAN.send();                  
               }
-              display.sleep();
-              VextOFF();
+              if (!screenOffMode)
+              {
+                display.sleep();
+                isDispayOn = 0;
+                VextOFF();
+              }
             }
-            deviceState = DEVICE_STATE_CYCLE; // Schedule next send
+            if (!menuMode)
+            {
+              deviceState = DEVICE_STATE_CYCLE; // Schedule next send
+            }
           }
           else 
           {
             if (!sleepMode)
             {
-              displayGPSInfoEverySecond(false); // No need to wakeup the display, if we are looping here, it should be already on
+              displayGPSInfoEverySecond(); // No need to wakeup the display, if we are looping here, it should be already on
             }       
           }
         }   
         else
         {
-          display.wakeup(); // We can come here after a longer pause (like when stopped or sleeping) and that's why we need to wakeup the display
-          displayGPSWaitWithCounter();
+          if (!screenOffMode)
+          {
+            displayGPSWaitWithCounter();
+          }
           autoSleepIfNoGPS(); // If the wait for GPS is too long, automatically go to sleep
         }   
       }
@@ -835,85 +1101,105 @@ void loop()
     case DEVICE_STATE_CYCLE:
     {
       loopingInSend = false;
-      // Schedule next packet transmission
-      if (sleepMode)
+      if (menuMode)
       {
-          stoppedCycle = 0;
-          appTxDutyCycle = SLEEPING_UPDATE_RATE;
-          // Schedule wake up by vibration if vibration sensor is enabled/available
-          #ifdef VIBR_SENSOR
-          attachInterrupt(VIBR_SENSOR, vibration, FALLING);
-          #endif
+        stateAfterMenu = deviceState; // This may not be necessary, because most of the menu options exist to Cycle anyway, but feels like the right thing to do
       }
       else
       {
-        appTxDutyCycle = MOVING_UPDATE_RATE;
-
-        if (onTheMove())
+        // Schedule next packet transmission
+        if (sleepMode)
         {
-          stoppedCycle = 0;
-          #ifdef DEBUG
-          Serial.println();
-          Serial.print("Speed = ");
-          Serial.print(avgSpeed);
-          Serial.println(" MOVING");
-          #endif
-        }
-        else
-        {
-          stoppedCycle++;
-          
-          if (stoppedCycle > MIN_STOPPED_CYCLES) // Do not switch to STOPPED too fast, wait a few more cycles for movement to resume and only if it does not, then switch
-          { 
-            appTxDutyCycle = STOPPED_UPDATE_RATE;
-            #ifdef DEBUG
-            Serial.println();
-            Serial.print("Speed = ");
-            Serial.print(avgSpeed);
-            Serial.println(" STOPPED");
-            #endif
+            stoppedCycle = 0;
+            appTxDutyCycle = SLEEPING_UPDATE_RATE;
             // Schedule wake up by vibration if vibration sensor is enabled/available
             #ifdef VIBR_SENSOR
             attachInterrupt(VIBR_SENSOR, vibration, FALLING);
             #endif
-            #ifdef MAX_STOPPED_CYCLES
-            // Auto sleep mode - if stopped for too many cycles, go to sleep
-            if (stoppedCycle > MAX_STOPPED_CYCLES)
-            {
-              sleepMode = true;
-              display.wakeup();
-              displayLogoAndMsg("Sleeping....", 4000);
-              display.sleep();
-              stopGPS();
-              appTxDutyCycle = SLEEPING_UPDATE_RATE;
-            }
+        }
+        else
+        {
+          appTxDutyCycle = movingUpdateRate;
+
+          if (onTheMove())
+          {
+            stoppedCycle = 0;
+            #ifdef DEBUG
+            Serial.println();
+            Serial.print("Speed = ");
+            Serial.print(avgSpeed);
+            Serial.println(" MOVING");
             #endif
           }
+          else
+          {
+            stoppedCycle++;
+          
+            if (stoppedCycle > MIN_STOPPED_CYCLES) // Do not switch to STOPPED too fast, wait a few more cycles for movement to resume and only if it does not, then switch
+            { 
+              appTxDutyCycle = STOPPED_UPDATE_RATE;
+              #ifdef DEBUG
+              Serial.println();
+              Serial.print("Speed = ");
+              Serial.print(avgSpeed);
+              Serial.println(" STOPPED");
+              if (screenOffMode)
+              {
+                delay(5);
+              }
+              #endif
+              // Schedule wake up by vibration if vibration sensor is enabled/available
+              #ifdef VIBR_SENSOR
+              attachInterrupt(VIBR_SENSOR, vibration, FALLING);
+              #endif
+              #ifdef MAX_STOPPED_CYCLES
+              // Auto sleep mode - if stopped for too many cycles, go to sleep
+              if (stoppedCycle > MAX_STOPPED_CYCLES)
+              {
+                sleepMode = true;
+                display.wakeup();
+                displayLogoAndMsg("Sleeping....", 4000);
+                display.sleep();
+                stopGPS();
+                appTxDutyCycle = SLEEPING_UPDATE_RATE;
+              }
+              #endif
+            }
+          }
         }
+        txDutyCycleTime = appTxDutyCycle + randr(0, APP_TX_DUTYCYCLE_RND);
+        LoRaWAN.cycle(txDutyCycleTime);
       }
-      
-      txDutyCycleTime = appTxDutyCycle + randr(0, APP_TX_DUTYCYCLE_RND);
-      LoRaWAN.cycle(txDutyCycleTime);
       deviceState = DEVICE_STATE_SLEEP;
       break;
     }
     case DEVICE_STATE_SLEEP:
     {
       loopingInSend = false;
-      if (!IsLoRaMacNetworkJoined)
+      if (menuMode)
+      {
+        if (!isDispayOn)
+        {
+          display.wakeup();
+          isDispayOn = 1;
+        }
+        displayMenu();
+      }
+      else if (!IsLoRaMacNetworkJoined)
       {
         displayJoinTimer(); // When not joined yet, it will display the seconds passed, so the user knows it is doing something
       }
-      else
+      else if (!sleepMode && onTheMove()) // When not in sleep mode and moving - display the current GPS every second
       {
-        if (!sleepMode && onTheMove()) // When not in sleep mode and moving - display the current GPS every second
-        {
-          displayGPSInfoEverySecond(true);                    
-        }     
-        else // either going into deep sleep or stopped - turn display off
+        displayGPSInfoEverySecond();                    
+      }
+      else // either going into deep sleep or stopped - turn display off
+      {
+        if (!screenOffMode)
         {
           display.sleep();
           VextOFF();
+          isDispayOn = 0;
         }
       }
       //cycleGPS();

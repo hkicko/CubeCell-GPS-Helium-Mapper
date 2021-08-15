@@ -6,6 +6,10 @@
 - Enabled the built in function for storing the network parameters after susccessful join, so it does not need to re-join next time after reboot
 - Added Battery Level display on some screens
 - Improved movement detection
+- Menu mode - short press on the USR button displays a menu, another short press cycles through the options, long press activates the current option
+- Screen off mode, activated from the menu - attempt to improve battery life
+- Increase/decrease moving update rate from the menu
+- Display battery voltage instead of percent by default, option to switch back to percent from the menu 
 
 This device is used for mapping the Helium networks LoRaWAN coverage. 
 The initial settings are - send every 5 seconds while moving, every minute when stopped. 
@@ -13,6 +17,7 @@ A quick press on the user button puts the GPS in a sleep mode. The sleep mode de
 Pressing the user button while in sleep mode wakes it up and resumes normal operation.
 
 Revision changes:
+- Added Menu mode
 - Improved movement detection (min stop cycles before switching to stopped update rate). Added battery level display.
 - Added vibration sensor wake up. 
 - Added Auto Sleep after stopped for too long. 
@@ -65,9 +70,9 @@ Click the PlatformIO: Upload button
 ```
 Click the PlatformIO: Serial Monitor button
 
-# Setting up a Decoder
+# Setting up Console
 
-In helium Console create a new function call it Heltec decoder => Type Decoder => Custom Script
+In [Helium Console](https://console.helium.com/) create a new function call it Heltec decoder => Type Decoder => Custom Script
 
 Copy and paste the decoder into the custom script pane
 
@@ -93,16 +98,18 @@ function Decoder(bytes, port) {
 
 ```
 
-Create a new Label for the decoder then save the function.
+Create two integrations one for CARGO (optional) and one for MAPPERS.
+For CARGO use the available prebuilt integration. 
+For MAPPERS use a custom HTTP integration with POST Endpoint URL https://mappers.helium.com/api/v1/ingest/uplink
 
-You need to create two integrations one for CARGO and one for MAPPERS add the label created above to both integrations.
+Go to Flows and from the Nodes menu add your device, decoder function and integrations. 
+Connect the device to the decoder. 
+Connect the decoder to the integrations.
 
-The payload and the decoder allows the data to update
-
+Useful links:
 [Mappers](http://mappers.helium.com) and [Cargo](https://cargo.helium.com)
 
 [Integration information with Mappers](https://docs.helium.com/use-the-network/coverage-mapping/mappers-api/)
 
 [Integration information for Cargo](https://docs.helium.com/use-the-network/console/integrations/cargo/)
 
-Here is a youtube Video uploaded by Joey, but note: Joey adds 3 labels, you only need one label. Assign the one label to the device, function, and the 2 integrations [Youtube Video from Joey](https://youtu.be/WIIC_DvZyz0)
