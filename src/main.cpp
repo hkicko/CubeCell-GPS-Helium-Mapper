@@ -682,9 +682,10 @@ void vibration(void)
   }
   else
   {
-    if (deviceState == DEVICE_STATE_SLEEP)
+    if (deviceState == DEVICE_STATE_SLEEP && stoppedCycle > MIN_STOPPED_CYCLES)
     {
-      deviceState = DEVICE_STATE_SEND; 
+      deviceState = DEVICE_STATE_CYCLE; 
+      stoppedCycle = MIN_STOPPED_CYCLES;
     }  
   }
 }
