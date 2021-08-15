@@ -107,6 +107,7 @@ Connect the device to the decoder.
 Connect the decoder to the integrations.
 
 Useful links:
+
 [Mappers](http://mappers.helium.com) and [Cargo](https://cargo.helium.com)
 
 [Integration information with Mappers](https://docs.helium.com/use-the-network/coverage-mapping/mappers-api/)
