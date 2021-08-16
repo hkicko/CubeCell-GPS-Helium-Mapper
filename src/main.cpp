@@ -673,6 +673,12 @@ void switchModeToSleep()
     display.sleep();
     isDispayOn = 0;
   }
+  #ifdef DEBUG
+  else
+  {
+    Serial.println("Going to sleep...");
+  }
+  #endif
   stopGPS();        
   deviceState = DEVICE_STATE_CYCLE;  
   stoppedCycle = 0;
@@ -939,6 +945,13 @@ void userKey(void)
     {
       if (sleepMode)
       {        
+        if (screenOffMode)
+        {
+          screenOffMode = false;  
+          VextON();
+          display.init();
+          isDispayOn = 1;
+        }
         switchModeOutOfSleep();
       }
       else if (screenOffMode)
@@ -1165,11 +1178,7 @@ void loop()
               // Auto sleep mode - if stopped for too many cycles, go to sleep
               if (stoppedCycle > MAX_STOPPED_CYCLES)
               {
-                sleepMode = true;
-                display.wakeup();
-                displayLogoAndMsg("Sleeping....", 4000);
-                display.sleep();
-                stopGPS();
+                switchModeToSleep();
                 appTxDutyCycle = SLEEPING_UPDATE_RATE;
               }
               #endif
