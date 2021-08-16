@@ -26,6 +26,8 @@ Revision changes:
 
 # Uploading the code
 
+**Note: If you prefer to use Arduino IDE, just take the \src\main.cpp file and rename it to "something".ino (for example CubeCell_GPS_Helium_Mapper.ino)**
+
 - Install Serial Driver
 Find Directions [here.](https://heltec-automation-docs.readthedocs.io/en/latest/general/establish_serial_connection.html)
 
