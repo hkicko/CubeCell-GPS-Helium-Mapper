@@ -813,7 +813,7 @@ bool prepareTxFrame(uint8_t port)
 void vibration(void)
 {
   detachInterrupt(VIBR_SENSOR);
-  stoppedCycle = 0;
+  //stoppedCycle = 0;
   
   #ifdef DEBUG
   Serial.println("Vibration detected");
@@ -831,19 +831,25 @@ void vibration(void)
   }
   #endif
   
-  if (sleepMode)
+  if (!menuMode) // Ignore vibrations while in the menu
   {
-    #ifdef VIBR_WAKE_FROM_SLEEP    
-    switchModeOutOfSleep();
-    #endif
-  }
-  else
-  {
-    if (deviceState == DEVICE_STATE_SLEEP && stoppedCycle > MIN_STOPPED_CYCLES)
+    if (sleepMode)
     {
-      deviceState = DEVICE_STATE_CYCLE; 
-      stoppedCycle = MIN_STOPPED_CYCLES;
-    }  
+      #ifdef VIBR_WAKE_FROM_SLEEP       
+      switchModeOutOfSleep();
+      #endif
+    }
+    else
+    {
+      // We use vibration to shorten the "stopped update rate" cycle. Meaning - if we reached the point where it updates at 
+      // stopepd update rate (default 1 min) and there is a vibration before this timer expires, we want to start sending 
+      // and not wait for the timer to expire and then send.     
+      if (deviceState == DEVICE_STATE_SLEEP && stoppedCycle > MIN_STOPPED_CYCLES) 
+      {
+        deviceState = DEVICE_STATE_CYCLE;      
+        stoppedCycle = MIN_STOPPED_CYCLES;
+      }  
+    }
   }
 }
 #endif
@@ -1115,7 +1121,9 @@ void loop()
             appTxDutyCycle = SLEEPING_UPDATE_RATE;
             // Schedule wake up by vibration if vibration sensor is enabled/available
             #ifdef VIBR_SENSOR
+            #ifdef VIBR_WAKE_FROM_SLEEP // No need to attach to the interrupt if we won't be using the vibration sensor to wake up from sleep
             attachInterrupt(VIBR_SENSOR, vibration, FALLING);
+            #endif
             #endif
         }
         else
