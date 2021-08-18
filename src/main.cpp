@@ -490,7 +490,7 @@ void displayJoinTimer()
   char str[30];
   int index; 
 
-  if ((millis() - lastScreenPrint) > 1000)
+  if ((millis() - lastScreenPrint) > 500)
   {
     display.setFont(ArialMT_Plain_16);
     display.setTextAlignment(TEXT_ALIGN_CENTER);
@@ -629,7 +629,7 @@ void displayGPSWaitWithCounter()
   char str[30];
   int index;
 
-  if ((millis() - lastScreenPrint) > 1000)
+  if ((millis() - lastScreenPrint) > 500)
   {
     if (!isDispayOn)
     {
