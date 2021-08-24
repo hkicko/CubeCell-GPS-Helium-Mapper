@@ -30,6 +30,7 @@ Air530ZClass                  GPS;
 #define MIN_STOPPED_CYCLES    5         // How many consecutive MOVING_UPDATE_RATE cycles after detecting no movement we should switch to STOPPED_UPDATE_RATE - this is to improve the experience in walk mode
 //#define MAX_STOPPED_CYCLES    8         // Max consecutive stopped cycles before going to sleep, keep in mind, the first MIN_STOPPED_CYCLES of these will be at MOVING_UPDATE_RATE and the next after that will be at STOPPED_UPDATE_RATE
 #define VBAT_CORRECTION       1.004     // Edit this for calibrating your battery voltage
+//#define CAYENNELPP_FORMAT   
 
 /*
   How many past readings to use for avg speed calc.
@@ -730,6 +731,29 @@ void autoSleepIfNoGPS()
   }
 }
 
+#ifdef CAYENNELPP_FORMAT
+bool prepareTxFrame(uint8_t port)
+{  
+  int32_t lat = GPS.location.lat() * 10000;
+  int32_t lon = GPS.location.lng() * 10000;
+  int32_t alt = GPS.altitude.meters() * 100;
+
+  appDataSize = 0;
+  appData[appDataSize++] = 0x01;
+  appData[appDataSize++] = 0x88;
+  appData[appDataSize++] = lat >> 16;
+  appData[appDataSize++] = lat >> 8;      
+  appData[appDataSize++] = lat;
+  appData[appDataSize++] = lon >> 16;
+  appData[appDataSize++] = lon >> 8;
+  appData[appDataSize++] = lon;
+  appData[appDataSize++] = alt >> 16;
+  appData[appDataSize++] = alt >> 8;
+  appData[appDataSize++] = alt;
+
+  return true;
+}
+#else  
 bool prepareTxFrame(uint8_t port)
 {
   /*appData size is LORAWAN_APP_DATA_MAX_SIZE which is defined in "commissioning.h".
@@ -814,6 +838,7 @@ bool prepareTxFrame(uint8_t port)
   
   return true;
 }
+#endif
 
 #ifdef VIBR_SENSOR
 void vibration(void)
