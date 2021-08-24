@@ -767,8 +767,8 @@ bool prepareTxFrame(uint8_t port)
   uint32_t  lat, lon;
   int       alt, course, speed, hdop, sats;
   
-  lat     = (uint32_t)(GPS.location.lat() * 1E7);
-  lon     = (uint32_t)(GPS.location.lng() * 1E7);
+  lat     = ((GPS.location.lat() + 90) / 180.0) * 16777215;
+  lon     = ((GPS.location.lng() + 180) / 360.0) * 16777215;
 
   if (lat == 0 || lon == 0)
   {
@@ -788,24 +788,21 @@ bool prepareTxFrame(uint8_t port)
   //Build Payload
   unsigned char *puc;
   appDataSize = 0;
-
+  
   puc = (unsigned char *)(&lat);
-  appData[appDataSize++] = puc[3];
   appData[appDataSize++] = puc[2];
   appData[appDataSize++] = puc[1];
   appData[appDataSize++] = puc[0];
 
   puc = (unsigned char *)(&lon);
-  appData[appDataSize++] = puc[3];
   appData[appDataSize++] = puc[2];
   appData[appDataSize++] = puc[1];
   appData[appDataSize++] = puc[0];
-  
-  /*puc = (unsigned char *)(&alt);
+
+  puc = (unsigned char *)(&alt);
   appData[appDataSize++] = puc[1];
   appData[appDataSize++] = puc[0];
-  */
-  
+    
   puc = (unsigned char *)(&speed);
   appData[appDataSize++] = puc[0];
   

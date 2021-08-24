@@ -16,6 +16,7 @@ A quick press on the user button puts the GPS in a sleep mode. The sleep mode de
 Pressing the user button while in sleep mode wakes it up and resumes normal operation.
 
 Revision changes:
+- Optimized data frame to fit GPS lat/long in 6 bytes instead of 8 and use the new availabe 2 bytes for altitude
 - Added option to send data in CayenneLPP format
 - Added Menu mode
 - Improved movement detection (min stop cycles before switching to stopped update rate). Added battery level display.
@@ -80,22 +81,25 @@ Copy and paste the decoder into the custom script pane
 
 ```
 function Decoder(bytes, port) {
-  return {
-    latitude:
-      ((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]) / 1E7,
-    longitude:
-      ((bytes[4] << 24) | (bytes[5] << 16) | (bytes[6] << 8) | bytes[7]) / 1E7,
-    altitude:
-      0,
-    sats:
-      (bytes[9]),
-    speed:
-      (((bytes[8]))/1.609).toFixed(2), 
-    battery:
-      (bytes[10]/100 + 2).toFixed(2),
-    accuracy:
-      2.5
-  };
+  var decoded = {};
+  
+  decoded.latitude = ((bytes[0]<<16)>>>0) + ((bytes[1]<<8)>>>0) + bytes[2];
+  decoded.latitude = (decoded.latitude / 16777215.0 * 180) - 90;
+
+  decoded.longitude = ((bytes[3]<<16)>>>0) + ((bytes[4]<<8)>>>0) + bytes[5];
+  decoded.longitude = (decoded.longitude / 16777215.0 * 360) - 180;
+  
+  var altValue = ((bytes[6]<<8)>>>0) + bytes[7];
+  var sign = bytes[6] & (1 << 7);
+  if(sign) decoded.altitude = 0xFFFF0000 | altValue;
+  else decoded.altitude = altValue;
+  
+  decoded.speed = (((bytes[8]))/1.609).toFixed(2);
+  decoded.sats = bytes[9];
+  decoded.battery = (((bytes[10])*0.2)/10).toFixed(2);
+  decoded.accuracy = 2.5;
+  
+  return decoded;    
 }
 
 ```
