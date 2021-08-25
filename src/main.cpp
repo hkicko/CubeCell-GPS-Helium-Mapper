@@ -292,7 +292,7 @@ void displayGPSInfo()
   display.setTextAlignment(TEXT_ALIGN_LEFT);
   display.drawString(0, 0, str);
   
-  index = sprintf(str, "%02d:%02d:%02d", GPS.time.hour(), GPS.time.minute(), GPS.time.second(), GPS.time.centisecond());
+  index = sprintf(str, "%02d:%02d:%02d", GPS.time.hour(), GPS.time.minute(), GPS.time.second());
   str[index] = 0;
   display.drawString(60, 0, str);
 
@@ -815,9 +815,9 @@ bool prepareTxFrame(uint8_t port)
   puc = (unsigned char *)(&speed);
   appData[appDataSize++] = puc[0];
   
-  appData[appDataSize++] = (uint8_t)(sats & 0xFF);
-
   appData[appDataSize++] = (uint8_t)((batteryVoltage-200) & 0xFF);
+
+  appData[appDataSize++] = (uint8_t)(sats & 0xFF);
   
   #ifdef DEBUG
   Serial.print("Speed ");
