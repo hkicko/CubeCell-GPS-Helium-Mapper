@@ -94,9 +94,9 @@ function Decoder(bytes, port) {
   if(sign) decoded.altitude = 0xFFFF0000 | altValue;
   else decoded.altitude = altValue;
   
-  decoded.speed = (((bytes[8]))/1.609).toFixed(2);
+  decoded.speed = parseFloat((((bytes[8]))/1.609).toFixed(2));
   decoded.sats = bytes[9];
-  decoded.battery = (((bytes[10])*0.2)/10).toFixed(2);
+  decoded.battery = parseFloat((bytes[10]/100 + 2).toFixed(2));
   decoded.accuracy = 2.5;
   
   return decoded;    
