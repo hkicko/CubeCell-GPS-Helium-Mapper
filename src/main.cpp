@@ -670,7 +670,7 @@ void switchModeToSleep()
       display.wakeup();
       isDispayOn = 1;
     } 
-    displayLogoAndMsg("Sleeping....", 4000);
+    displayLogoAndMsg("Sleeping...", 4000);
     display.sleep();
     isDispayOn = 0;
   }
@@ -688,14 +688,23 @@ void switchModeToSleep()
 void switchModeOutOfSleep()
 {
   sleepMode = false;
-  if (!isDispayOn)
+  if (!screenOffMode)
   {
-    display.wakeup();
-    isDispayOn = 1;
+    if (!isDispayOn)
+    {
+      display.wakeup();
+      isDispayOn = 1;
+    }
+    displayLogoAndMsg("Waking Up...", 4000);
+    display.clear();
+    display.display();
   }
-  displayLogoAndMsg("Waking Up......", 4000);
-  display.clear();
-  display.display();
+  #ifdef DEBUG
+  else
+  {
+    Serial.println("Waking Up...");
+  }
+  #endif
   startGPS();      
   deviceState = DEVICE_STATE_CYCLE;
   stoppedCycle = 0;
@@ -1227,7 +1236,10 @@ void loop()
       }
       else if (!IsLoRaMacNetworkJoined)
       {
-        displayJoinTimer(); // When not joined yet, it will display the seconds passed, so the user knows it is doing something
+        if (!screenOffMode)
+        {
+          displayJoinTimer(); // When not joined yet, it will display the seconds passed, so the user knows it is doing something
+        }
       }
       else if (!sleepMode && onTheMove()) // When not in sleep mode and moving - display the current GPS every second
       {
