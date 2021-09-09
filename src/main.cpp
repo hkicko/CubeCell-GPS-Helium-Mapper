@@ -898,6 +898,19 @@ void vibration(void)
 }
 #endif
 
+void setVibrAutoWakeUp()
+{
+  // Schedule wake up by vibration if vibration sensor is enabled/available
+  #ifdef VIBR_SENSOR
+  #ifdef VIBR_WAKE_FROM_SLEEP // No need to attach to the interrupt if we won't be using the vibration sensor to wake up from sleep
+  #ifdef MENU_SLEEP_DISABLE_VIBR_WAKEUP // If menu sleep overwrites the "vibration wake up from sleeep", then add the IF statement to not attach to the interrupt when sleep was initiated from the menu
+  if (!sleepActivatedFromMenu)
+  #endif
+  attachInterrupt(VIBR_SENSOR, vibration, FALLING);
+  #endif
+  #endif
+}
+
 void executeMenu(void)
 {
   switch (currentMenu)
@@ -1168,15 +1181,7 @@ void loop()
         {
             stoppedCycle = 0;
             appTxDutyCycle = SLEEPING_UPDATE_RATE;
-            // Schedule wake up by vibration if vibration sensor is enabled/available
-            #ifdef VIBR_SENSOR
-            #ifdef VIBR_WAKE_FROM_SLEEP // No need to attach to the interrupt if we won't be using the vibration sensor to wake up from sleep
-            #ifdef MENU_SLEEP_DISABLE_VIBR_WAKEUP // If menu sleep overwrites the "vibration wake up from sleeep", then add the IF statement to not attach to the interrupt when sleep was initiated from the menu
-            if (!sleepActivatedFromMenu)
-            #endif
-            attachInterrupt(VIBR_SENSOR, vibration, FALLING);
-            #endif
-            #endif
+            setVibrAutoWakeUp();
         }
         else
         {
@@ -1211,7 +1216,9 @@ void loop()
               #endif
               // Schedule wake up by vibration if vibration sensor is enabled/available
               #ifdef VIBR_SENSOR
+              #ifndef MAX_STOPPED_CYCLES
               attachInterrupt(VIBR_SENSOR, vibration, FALLING);
+              #endif
               #endif
               #ifdef MAX_STOPPED_CYCLES
               // Auto sleep mode - if stopped for too many cycles, go to sleep
@@ -1219,7 +1226,14 @@ void loop()
               {
                 switchModeToSleep();
                 appTxDutyCycle = SLEEPING_UPDATE_RATE;
+                setVibrAutoWakeUp();
               }
+              #ifdef VIBR_SENSOR              
+              else
+              {                
+                attachInterrupt(VIBR_SENSOR, vibration, FALLING);               
+              }
+              #endif
               #endif
             }
           }
