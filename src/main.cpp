@@ -21,7 +21,9 @@ Air530ZClass                  GPS;
 // Commend out/uncomment this line to disable/enable the auto sleep/wake up by vibration sensor feature
 //#define VIBR_SENSOR           GPIO7     // Change the pin where the sensor is connected if different
 // Comment out/uncomment this line to disable/enable the functionality  where the vibration sensor wakes the device from "deep" sleep (VIBR_SENSOR must be enabled)
-//#define VIBR_WAKE_FROM_SLEEP  
+//#define VIBR_WAKE_FROM_SLEEP
+// If put to sleeep from the menu, this will disable the wake up by vibration and only allow it to work when auto sleep was activated in some way (like stopped for too long)
+//#define MENU_SLEEP_DISABLE_VIBR_WAKEUP  
 
 #define MOVING_UPDATE_RATE    5000      // Update rate when moving
 #define STOPPED_UPDATE_RATE   60000     // Update rate when stopped
@@ -170,22 +172,23 @@ const uint8_t helium_logo_bmp[] PROGMEM = {
    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
-bool      sleepMode           = false;
-bool      loopingInSend       = false;
-bool      menuMode            = false;
-bool      screenOffMode       = false; // Enable normal operation with the screen off - for more battery saving
-uint32_t  lastScreenPrint     = 0;
-uint32_t  joinStart           = 0;
-uint32_t  gpsSearchStart      = 0;
+bool      sleepMode               = false;
+bool      loopingInSend           = false;
+bool      menuMode                = false;
+bool      screenOffMode           = false; // Enable normal operation with the screen off - for more battery saving
+uint32_t  lastScreenPrint         = 0;
+uint32_t  joinStart               = 0;
+uint32_t  gpsSearchStart          = 0;
 double    speedHistory[SPEED_HISTORY_BUFFER_SIZE];
-uint8_t   speedHistoryPointer = 0;
-uint8_t   spdHistBuffFull     = 0; /* Counter to tell us how full the buffer is - we want it min SPEED_HISTORY_BUFFER_SIZE before we 
-                                    could send and we use that instead of waiting a specific time for the readings to "stabilize" */
-float     avgSpeed            = 0;
-int       stoppedCycle        = 0;
-int       currentMenu         = 0;
-uint32_t  movingUpdateRate    = MOVING_UPDATE_RATE;
-bool      displayBatPct       = false;
+uint8_t   speedHistoryPointer     = 0;
+uint8_t   spdHistBuffFull         = 0; /* Counter to tell us how full the buffer is - we want it min SPEED_HISTORY_BUFFER_SIZE before we 
+                                        could send and we use that instead of waiting a specific time for the readings to "stabilize" */
+float     avgSpeed                = 0;
+int       stoppedCycle            = 0;
+int       currentMenu             = 0;
+uint32_t  movingUpdateRate        = MOVING_UPDATE_RATE;
+bool      displayBatPct           = false;
+bool      sleepActivatedFromMenu  = false;
 enum eDeviceState_LoraWan stateAfterMenu;
 
 
@@ -688,6 +691,7 @@ void switchModeToSleep()
 void switchModeOutOfSleep()
 {
   sleepMode = false;
+  sleepActivatedFromMenu = false;
   if (!screenOffMode)
   {
     if (!isDispayOn)
@@ -872,7 +876,10 @@ void vibration(void)
   {
     if (sleepMode)
     {
-      #ifdef VIBR_WAKE_FROM_SLEEP       
+      #ifdef VIBR_WAKE_FROM_SLEEP     
+      #ifdef MENU_SLEEP_DISABLE_VIBR_WAKEUP // If menu sleep overwrites the "vibration wake up from sleeep", then add the IF statement to not wake up when sleep was initiated from the menu
+      if (!sleepActivatedFromMenu)
+      #endif  
       switchModeOutOfSleep();
       #endif
     }
@@ -904,6 +911,7 @@ void executeMenu(void)
     case SLEEP:
       switchModeToSleep();         
       menuMode = false;
+      sleepActivatedFromMenu = true;
       break;
 
     case DEBUG_INFO:
@@ -1166,6 +1174,9 @@ void loop()
             // Schedule wake up by vibration if vibration sensor is enabled/available
             #ifdef VIBR_SENSOR
             #ifdef VIBR_WAKE_FROM_SLEEP // No need to attach to the interrupt if we won't be using the vibration sensor to wake up from sleep
+            #ifdef MENU_SLEEP_DISABLE_VIBR_WAKEUP // If menu sleep overwrites the "vibration wake up from sleeep", then add the IF statement to not attach to the interrupt when sleep was initiated from the menu
+            if (!sleepActivatedFromMenu)
+            #endif
             attachInterrupt(VIBR_SENSOR, vibration, FALLING);
             #endif
             #endif
