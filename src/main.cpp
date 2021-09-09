@@ -1133,10 +1133,7 @@ void loop()
                 VextOFF();
               }
             }
-            if (!menuMode)
-            {
-              deviceState = DEVICE_STATE_CYCLE; // Schedule next send
-            }
+            deviceState = DEVICE_STATE_CYCLE; // Schedule next send
           }
           else 
           {
