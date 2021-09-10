@@ -18,6 +18,7 @@ Pressing the user button while in sleep mode wakes it up and resumes normal oper
 
 Revision changes:
 - Tracker mode
+- Added option to disable wake up on vibration when sleep was activated from the menu
 - Optimized data frame to fit GPS lat/long in 6 bytes instead of 8 and use the new availabe 2 bytes for altitude
 - Added option to send data in CayenneLPP format
 - Added Menu mode
