@@ -91,8 +91,11 @@ bool keepNet = LORAWAN_NET_RESERVE;
 /* Indicates if the node is sending confirmed or unconfirmed messages */
 bool isTxConfirmed = LORAWAN_UPLINKMODE;
 
+#define APP_PORT_DEFAULT 2
+#define APP_PORT_LASTLOC 3
+
 /* Application port */
-uint8_t appPort = 2;
+uint8_t appPort = APP_PORT_DEFAULT;
 /*!
   Number of trials to transmit the frame, if the LoRaMAC layer did not
   receive an acknowledgment. The MAC performs a datarate adaptation,
@@ -191,10 +194,14 @@ bool      displayBatPct           = false;
 bool      sleepActivatedFromMenu  = false;
 enum eDeviceState_LoraWan stateAfterMenu;
 
+bool      trackerMode         = false;
+bool      sendLastLoc         = false;
+uint32_t  last_lat            = 0;
+uint32_t  last_lon            = 0;
 
-#define MENU_CNT 7
+#define MENU_CNT 8
 
-char* menu[MENU_CNT] = {"Screen OFF", "Sleep", "Debug Info", "Faster Upd", "Slower Upd", "Reset GPS", "Bat V/%"};
+char* menu[MENU_CNT] = {"Screen OFF", "Sleep", "Debug Info", "Faster Upd", "Slower Upd", "Tracker mode", "Reset GPS", "Bat V/%"};
 
 enum eMenuEntries
 {
@@ -203,6 +210,7 @@ enum eMenuEntries
   DEBUG_INFO,
   FASTER_UPD,
   SLOWER_UPD,
+  TRACKER_MODE,
   RESET_GPS,
   BAT_V_PCT
 };
@@ -589,6 +597,9 @@ void displayDebugInfo()
   index = sprintf(str,"%s: %i", "DR", loraDataRate());
   str[index] = 0; 
   display.drawString(0, 30, str);    
+  index = sprintf(str,"%s: %i", "Tracker mode", trackerMode);
+  str[index] = 0; 
+  display.drawString(0, 40, str);    
   display.display();
 
   delay(4000);    
@@ -614,7 +625,13 @@ void cycleGPS()
   if (GPS.location.age() < 1000)
   {
     addSpeedReading(GPS.speed.kmph());
-    calcAvgSpeed();        
+    calcAvgSpeed();   
+
+    if (trackerMode && GPS.location.isValid()) // store the last lat/long 
+    {
+      last_lat    = ((GPS.location.lat() + 90) / 180.0) * 16777215;
+      last_lon    = ((GPS.location.lng() + 180) / 360.0) * 16777215;
+    }
   }
   else
   {
@@ -780,73 +797,94 @@ bool prepareTxFrame(uint8_t port)
   uint32_t  lat, lon;
   int       alt, course, speed, hdop, sats;
   
-  lat     = ((GPS.location.lat() + 90) / 180.0) * 16777215;
-  lon     = ((GPS.location.lng() + 180) / 360.0) * 16777215;
+  unsigned char *puc;
+  bool      ret = false;
+  
+  appDataSize = 0;
 
-  if (lat == 0 || lon == 0)
+  switch (port)
   {
-    return false;
+    case APP_PORT_DEFAULT:
+      
+      if (GPS.location.isValid())
+      {
+        lat     = ((GPS.location.lat() + 90) / 180.0) * 16777215;
+        lon     = ((GPS.location.lng() + 180) / 360.0) * 16777215;
+
+        alt     = (uint16_t)GPS.altitude.meters();
+        course  = GPS.course.deg();
+        speed   = (uint16_t)avgSpeed;  
+        sats    = GPS.satellites.value();
+        hdop    = GPS.hdop.hdop();
+
+        detachInterrupt(USER_KEY); // reading battery voltage is messing up with the pin and driving it down, which simulates a long press for our interrupt handler 
+        uint16_t batteryVoltage = ((float_t)((float_t)((float_t)getBatteryVoltage() * VBAT_CORRECTION)  / 10) + .5);  
+
+        puc = (unsigned char *)(&lat);
+        appData[appDataSize++] = puc[2];
+        appData[appDataSize++] = puc[1];
+        appData[appDataSize++] = puc[0];
+
+        puc = (unsigned char *)(&lon);
+        appData[appDataSize++] = puc[2];
+        appData[appDataSize++] = puc[1];
+        appData[appDataSize++] = puc[0];
+
+        puc = (unsigned char *)(&alt);
+        appData[appDataSize++] = puc[1];
+        appData[appDataSize++] = puc[0];
+
+        puc = (unsigned char *)(&speed);
+        appData[appDataSize++] = puc[0];
+        
+        appData[appDataSize++] = (uint8_t)((batteryVoltage-200) & 0xFF);
+
+        appData[appDataSize++] = (uint8_t)(sats & 0xFF);
+
+        #ifdef DEBUG
+        Serial.print("Speed ");
+        Serial.print(speed);
+        Serial.println(" kph");
+
+        //get Battery Level 1-254 Returned by BoardGetBatteryLevel
+        uint8_t batteryLevel = BoardGetBatteryLevel();
+        //Convert to %
+        batteryLevel = (uint8_t)((float_t)batteryLevel - BAT_LEVEL_EMPTY) * 100 / (BAT_LEVEL_FULL - BAT_LEVEL_EMPTY);
+
+        Serial.print("Battery Level ");
+        Serial.print(batteryLevel);
+        Serial.println(" %");
+        
+        Serial.print("BatteryVoltage: ");
+        Serial.println(batteryVoltage);
+
+        Serial.print("SleepMode = ");
+        Serial.println(sleepMode);
+        Serial.println();  
+        #endif
+        attachInterrupt(USER_KEY, userKey, FALLING);  // Attach again after voltage reading is done 
+
+        ret = true;
+      }
+      break;
+
+    case APP_PORT_LASTLOC:
+
+      puc = (unsigned char *)(&last_lat);
+      appData[appDataSize++] = puc[2];
+      appData[appDataSize++] = puc[1];
+      appData[appDataSize++] = puc[0];
+
+      puc = (unsigned char *)(&last_lon);
+      appData[appDataSize++] = puc[2];
+      appData[appDataSize++] = puc[1];
+      appData[appDataSize++] = puc[0];
+
+      ret = true;
+      break;      
   }
 
-  alt     = (uint16_t)GPS.altitude.meters();
-  course  = GPS.course.deg();
-  speed   = (uint16_t)avgSpeed;  
-  sats    = GPS.satellites.value();
-  hdop    = GPS.hdop.hdop();
-
-  detachInterrupt(USER_KEY); // reading battery voltage is messing up with the pin and driving it down, which simulates a long press for our interrupt handler 
-
-  uint16_t batteryVoltage = ((float_t)((float_t)((float_t)getBatteryVoltage() * VBAT_CORRECTION)  / 10) + .5);  
-  
-  //Build Payload
-  unsigned char *puc;
-  appDataSize = 0;
-  
-  puc = (unsigned char *)(&lat);
-  appData[appDataSize++] = puc[2];
-  appData[appDataSize++] = puc[1];
-  appData[appDataSize++] = puc[0];
-
-  puc = (unsigned char *)(&lon);
-  appData[appDataSize++] = puc[2];
-  appData[appDataSize++] = puc[1];
-  appData[appDataSize++] = puc[0];
-
-  puc = (unsigned char *)(&alt);
-  appData[appDataSize++] = puc[1];
-  appData[appDataSize++] = puc[0];
-    
-  puc = (unsigned char *)(&speed);
-  appData[appDataSize++] = puc[0];
-  
-  appData[appDataSize++] = (uint8_t)((batteryVoltage-200) & 0xFF);
-
-  appData[appDataSize++] = (uint8_t)(sats & 0xFF);
-  
-  #ifdef DEBUG
-  Serial.print("Speed ");
-  Serial.print(speed);
-  Serial.println(" kph");
-
-  //get Battery Level 1-254 Returned by BoardGetBatteryLevel
-  uint8_t batteryLevel = BoardGetBatteryLevel();
-  //Convert to %
-  batteryLevel = (uint8_t)((float_t)batteryLevel - BAT_LEVEL_EMPTY) * 100 / (BAT_LEVEL_FULL - BAT_LEVEL_EMPTY);
-
-  Serial.print("Battery Level ");
-  Serial.print(batteryLevel);
-  Serial.println(" %");
-  
-  Serial.print("BatteryVoltage: ");
-  Serial.println(batteryVoltage);
-
-  Serial.print("SleepMode = ");
-  Serial.println(sleepMode);
-  Serial.println();  
-  #endif
-  attachInterrupt(USER_KEY, userKey, FALLING);  // Attach again after voltage reading is done 
-  
-  return true;
+  return ret;
 }
 #endif
 
@@ -950,6 +988,12 @@ void executeMenu(void)
       }
       deviceState = DEVICE_STATE_CYCLE;  
       stoppedCycle = 0;
+      menuMode = false;
+      break;
+
+    case TRACKER_MODE:
+      trackerMode = !trackerMode;
+      deviceState = stateAfterMenu;
       menuMode = false;
       break;
 
@@ -1114,6 +1158,16 @@ void loop()
       }
       else 
       {  
+        if (sendLastLoc)
+        {
+          appPort = APP_PORT_LASTLOC;
+          if (prepareTxFrame(appPort))
+          {
+            LoRaWAN.send();   
+          }
+          sendLastLoc = false;
+          appPort = APP_PORT_DEFAULT;
+        }
         cycleGPS(); // Read anything queued in the GPS Serial buffer, parse it and populate the internal variables with the latest GPS data
         
         if (!loopingInSend) // We are just getting here from some other state
@@ -1124,7 +1178,7 @@ void loop()
           gpsSearchStart = lastScreenPrint = millis(); 
         }
         
-        if (GPS.location.age() < 1000) 
+        if (GPS.location.age() < 1000)
         {
           // Only send if it had enough time to stabilize, otherwise just display on screen
           if (enoughSpeedHistory()) 
@@ -1181,6 +1235,7 @@ void loop()
         {
             stoppedCycle = 0;
             appTxDutyCycle = SLEEPING_UPDATE_RATE;
+            sendLastLoc = trackerMode; // After wake up, if tracker mode enabled - send the last known location before waiting for GPS 
             setVibrAutoWakeUp();
         }
         else

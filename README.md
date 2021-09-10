@@ -9,13 +9,16 @@
 - Screen off mode, activated from the menu - attempt to improve battery life
 - Increase/decrease moving update rate from the menu
 - Display battery voltage instead of percent by default, option to switch back to percent from the menu 
+- Tracker mode, activated from the menu - stores and sends last known location on wake up from sleep. Note - there is new decoder to support that functionality.
 
 This device is used for mapping the Helium networks LoRaWAN coverage. 
 The initial settings are - send every 5 seconds while moving, every minute when stopped. 
-A quick press on the user button puts the GPS in a sleep mode. The sleep mode decreases the updates to once every 6 hours. 
+A quick press on the user button brings on a menu with options. Another short press cycless through the options. Long press activates the current option.
+The Sleep menu option puts the GPS in a sleep mode. The sleep mode decreases the updates to once every 6 hours. 
 Pressing the user button while in sleep mode wakes it up and resumes normal operation.
 
 Revision changes:
+- Tracker mode
 - Optimized data frame to fit GPS lat/long in 6 bytes instead of 8 and use the new availabe 2 bytes for altitude
 - Added option to send data in CayenneLPP format
 - Added Menu mode
@@ -83,23 +86,35 @@ Copy and paste the decoder into the custom script pane
 function Decoder(bytes, port) {
   var decoded = {};
   
-  decoded.latitude = ((bytes[0]<<16)>>>0) + ((bytes[1]<<8)>>>0) + bytes[2];
-  decoded.latitude = (decoded.latitude / 16777215.0 * 180) - 90;
-
-  decoded.longitude = ((bytes[3]<<16)>>>0) + ((bytes[4]<<8)>>>0) + bytes[5];
-  decoded.longitude = (decoded.longitude / 16777215.0 * 360) - 180;
+  var latitude = ((bytes[0]<<16)>>>0) + ((bytes[1]<<8)>>>0) + bytes[2];
+  latitude = (latitude / 16777215.0 * 180) - 90;
   
-  var altValue = ((bytes[6]<<8)>>>0) + bytes[7];
-  var sign = bytes[6] & (1 << 7);
-  if(sign) decoded.altitude = 0xFFFF0000 | altValue;
-  else decoded.altitude = altValue;
+  var longitude = ((bytes[3]<<16)>>>0) + ((bytes[4]<<8)>>>0) + bytes[5];
+  longitude = (longitude / 16777215.0 * 360) - 180;
   
-  decoded.speed = parseFloat((((bytes[8]))/1.609).toFixed(2));
-  decoded.battery = parseFloat((bytes[9]/100 + 2).toFixed(2));
-  decoded.sats = bytes[10];
-  decoded.accuracy = 2.5;
-  
-  return decoded;    
+  switch (port)
+  {
+    case 2:
+      decoded.latitude = latitude;
+      decoded.longitude = longitude; 
+      
+      var altValue = ((bytes[6]<<8)>>>0) + bytes[7];
+      var sign = bytes[6] & (1 << 7);
+      if(sign) decoded.altitude = 0xFFFF0000 | altValue;
+      else decoded.altitude = altValue;
+      
+      decoded.speed = parseFloat((((bytes[8]))/1.609).toFixed(2));
+      decoded.battery = parseFloat((bytes[9]/100 + 2).toFixed(2));
+      decoded.sats = bytes[10];
+      decoded.accuracy = 2.5;
+      break;
+    case 3:
+      decoded.last_latitude = latitude;
+      decoded.last_longitude = longitude; 
+      break;
+  }
+     
+  return decoded;  
 }
 
 ```
