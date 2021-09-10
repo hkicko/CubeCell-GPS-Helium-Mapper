@@ -13,7 +13,6 @@
 
 This device is used for mapping the Helium networks LoRaWAN coverage. 
 The initial settings are - send every 5 seconds while moving, every minute when stopped. 
-A quick press on the user button brings on a menu with options. Another short press cycless through the options. Long press activates the current option.
 The Sleep menu option puts the GPS in a sleep mode. The sleep mode decreases the updates to once every 6 hours. 
 Pressing the user button while in sleep mode wakes it up and resumes normal operation.
 
