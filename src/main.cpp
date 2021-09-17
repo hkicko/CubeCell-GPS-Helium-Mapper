@@ -627,7 +627,7 @@ void cycleGPS()
     addSpeedReading(GPS.speed.kmph());
     calcAvgSpeed();   
 
-    if (trackerMode && GPS.location.isValid()) // store the last lat/long 
+    if (trackerMode) // store the last lat/long 
     {
       last_lat    = ((GPS.location.lat() + 90) / 180.0) * 16777215;
       last_lon    = ((GPS.location.lng() + 180) / 360.0) * 16777215;
