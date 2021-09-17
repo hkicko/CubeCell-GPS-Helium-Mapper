@@ -222,14 +222,14 @@ int32_t fracPart(double val, int n)
   return (int32_t)abs(((val - (int32_t)(val)) * pow(10, n)));
 }
 
-// oled power on
+// RGB LED power on
 void VextON(void)
 {
   pinMode(Vext, OUTPUT);
   digitalWrite(Vext, LOW);
 }
 
-// oled power off
+// RGB LED power off
 void VextOFF(void) 
 {
   pinMode(Vext, OUTPUT);
@@ -344,7 +344,6 @@ void displayGPSInfo()
   index = sprintf(str, "speed: %d.%d km/h", (int)GPS.speed.kmph(), fracPart(GPS.speed.kmph(), 2));
   str[index] = 0;
   display.drawString(0, 48, str);
-  display.display();
 
   index = sprintf(str, "sats: %d", (int)GPS.satellites.value());
   str[index] = 0;
