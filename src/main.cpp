@@ -19,11 +19,13 @@ Air530ZClass                  GPS;
 #endif
 
 // Commend out/uncomment this line to disable/enable the auto sleep/wake up by vibration sensor feature
-#define VIBR_SENSOR           GPIO6     // Change the pin where the sensor is connected if different
+#define VIBR_SENSOR           GPIO5     // Change the pin where the sensor is connected if different
 // Comment out/uncomment this line to disable/enable the functionality  where the vibration sensor wakes the device from "deep" sleep (VIBR_SENSOR must be enabled)
 //#define VIBR_WAKE_FROM_SLEEP
 // If put to sleeep from the menu, this will disable the wake up by vibration and only allow it to work when auto sleep was activated in some way (like stopped for too long)
-//#define MENU_SLEEP_DISABLE_VIBR_WAKEUP
+#define MENU_SLEEP_DISABLE_VIBR_WAKEUP
+// Enable this to activate the auto sleep on no vibration function for the cases when the device is left stationary indoors and GPS generates fake movement so it can't go to sleep 
+#define VIBR_AUTOSLEEP_TIMEOUT 300000
 
 #define MOVING_UPDATE_RATE    5000      // Update rate when moving
 #define STOPPED_UPDATE_RATE   60000     // Update rate when stopped
@@ -33,13 +35,6 @@ Air530ZClass                  GPS;
 #define MAX_STOPPED_CYCLES    8         // Max consecutive stopped cycles before going to sleep, keep in mind, the first MIN_STOPPED_CYCLES of these will be at MOVING_UPDATE_RATE and the next after that will be at STOPPED_UPDATE_RATE
 #define VBAT_CORRECTION       1.004     // Edit this for calibrating your battery voltage
 //#define CAYENNELPP_FORMAT   
-
-#ifdef VIBR_SENSOR
-#ifdef MAX_STOPPED_CYCLES
-// Enable this to activate the auto sleep on no vibration function for the cases when the device is left stationary indoors and GPS generates fake movement so it can't go to sleep.
-#define VIBR_AUTOSLEEP_TIMEOUT 300000
-#endif
-#endif
 
 /*
   How many past readings to use for avg speed calc.
@@ -767,10 +762,12 @@ void switchScreenOnMode()
 
 void autoSleepIfNoGPS()
 {
+  #ifdef MAX_GPS_WAIT
   if (millis() - gpsSearchStart > MAX_GPS_WAIT)
   {
     switchModeToSleep();
   }
+  #endif
 }
 
 #ifdef CAYENNELPP_FORMAT
@@ -944,25 +941,42 @@ void vibration(void)
       if (deviceState == DEVICE_STATE_SLEEP && stoppedCycle > MIN_STOPPED_CYCLES) 
       {
         deviceState = DEVICE_STATE_CYCLE;      
-        stoppedCycle = MIN_STOPPED_CYCLES;
+        stoppedCycle = MIN_STOPPED_CYCLES - 1;
       }  
     }
   }
 }
-#endif
 
 void setVibrAutoWakeUp()
 {
-  // Schedule wake up by vibration if vibration sensor is enabled/available
-  #ifdef VIBR_SENSOR
-  #ifdef VIBR_WAKE_FROM_SLEEP // No need to attach to the interrupt if we won't be using the vibration sensor to wake up from sleep
-  #ifdef MENU_SLEEP_DISABLE_VIBR_WAKEUP // If menu sleep overwrites the "vibration wake up from sleeep", then add the IF statement to not attach to the interrupt when sleep was initiated from the menu
-  if (!sleepActivatedFromMenu)
+  bool setupVibr = !sleepMode; // Default operation is - attach in moving and stopepd mode, do not attach in sleep mode
+
+  // Except if we have VIBR_WAKE_FROM_SLEEP enabled, in which case we need to also attach in sleep mode
+  #ifdef VIBR_WAKE_FROM_SLEEP 
+    // But if MENU_SLEEP_DISABLE_VIBR_WAKEUP enabled, only include sleep mode if sleep was not activated from the menu
+    #ifdef MENU_SLEEP_DISABLE_VIBR_WAKEUP
+    if (!sleepActivatedFromMenu)
+    #endif
+      setupVibr = setupVibr | sleepMode;  
   #endif
-  attachInterrupt(VIBR_SENSOR, vibration, FALLING);
-  #endif
+  
+  if (setupVibr)
+  {
+    attachInterrupt(VIBR_SENSOR, vibration, FALLING);
+  }  
+}
+
+void autoSleepIfNoVibr()
+{
+  #ifdef VIBR_AUTOSLEEP_TIMEOUT          
+  // if too long since last vibration, force it to go to sleep
+  if (millis() - lastVibrEvent > VIBR_AUTOSLEEP_TIMEOUT)
+  {
+    switchModeToSleep();    
+  }          
   #endif
 }
+#endif
 
 void executeMenu(void)
 {
@@ -1232,6 +1246,9 @@ void loop()
             displayGPSWaitWithCounter();
           }
           autoSleepIfNoGPS(); // If the wait for GPS is too long, automatically go to sleep
+          #ifdef VIBR_SENSOR
+          autoSleepIfNoVibr(); // If we can't get GPS fix for VIBR_AUTOSLEEP_TIMEOUT then go to sleep
+          #endif
         }   
       }
       break;
@@ -1245,38 +1262,24 @@ void loop()
       }
       else
       {
+        #ifdef VIBR_SENSOR
+        autoSleepIfNoVibr();
+        #endif
+
         // Schedule next packet transmission
         if (sleepMode)
         {
             stoppedCycle = 0;
             appTxDutyCycle = SLEEPING_UPDATE_RATE;
             sendLastLoc = trackerMode; // After wake up, if tracker mode enabled - send the last known location before waiting for GPS 
-            setVibrAutoWakeUp();
         }
         else
         {
           appTxDutyCycle = movingUpdateRate;
 
-          #ifdef VIBR_SENSOR
-          #ifdef VIBR_AUTOSLEEP_TIMEOUT
-          #ifdef MAX_STOPPED_CYCLES
-          // if too long since last vibration, force it to go to sleep
-          if (millis() - lastVibrEvent > VIBR_AUTOSLEEP_TIMEOUT)
-          {
-            avgSpeed = 0; // this will force onTheMove() to return false
-            stoppedCycle = MAX_STOPPED_CYCLES; // this will force auto sleep because next we will do stoppedCycle++ and then check stoppedCycle > MAX_STOPPED_CYCLES
-          
-          }
-          #endif
-          #endif
-          #endif
-
           if (onTheMove())
           {
             stoppedCycle = 0;
-            #ifdef VIBR_AUTOSLEEP_TIMEOUT
-            lastVibrEvent = millis(); 
-            #endif
             #ifdef DEBUG
             Serial.println();
             Serial.print("Speed = ");
@@ -1301,31 +1304,22 @@ void loop()
                 delay(5);
               }
               #endif
-              // Schedule wake up by vibration if vibration sensor is enabled/available
-              #ifdef VIBR_SENSOR
-              #ifndef MAX_STOPPED_CYCLES
-              attachInterrupt(VIBR_SENSOR, vibration, FALLING);
-              #endif
-              #endif
+              
               #ifdef MAX_STOPPED_CYCLES
               // Auto sleep mode - if stopped for too many cycles, go to sleep
               if (stoppedCycle > MAX_STOPPED_CYCLES)
               {
                 switchModeToSleep();
                 appTxDutyCycle = SLEEPING_UPDATE_RATE;
-                setVibrAutoWakeUp();
               }
-              #ifdef VIBR_SENSOR              
-              else
-              {                
-                attachInterrupt(VIBR_SENSOR, vibration, FALLING);               
-              }
-              #endif
               #endif
             }
           }
         }
-        txDutyCycleTime = appTxDutyCycle + randr(0, APP_TX_DUTYCYCLE_RND);
+        #ifdef VIBR_SENSOR
+        setVibrAutoWakeUp();
+        #endif
+        txDutyCycleTime = appTxDutyCycle;
         LoRaWAN.cycle(txDutyCycleTime);
       }
       deviceState = DEVICE_STATE_SLEEP;
