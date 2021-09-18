@@ -137,18 +137,24 @@ Useful links:
 
 # Vibration sensor
 Theoretically, any sensor that can provide digital output could be used.
+
 For now, we have information about these 2 options:
-SW-420 board
+
+- SW-420 board
 ![SW-420 board](img/SW-420_board.jpg)
+
 If you want to use the board, you have to connect it the following way:
+```
 VCC - VDD
 GND - GND
 DO  - GPIOx where you pick which one to use, GPIO7 is the closest one on the CubeCell board
+```
 
-SW-420 bare sensor
+- SW-420 bare sensor
+
 ![SW-420 sensor](img/SW-420_sensor.jpg)
 
 If you decide to use just the sensor, you connect it between the VDD and 
-the GPIO pin you want to use (GPIO5 is most convenient if you want to put the sensor directly on the board)
+the GPIO pin you want to use (GPIO5 is most convenient if you want to put the sensor directly on the board).
 And you need to add a 10k resistor between GND and the chosen GPIO pin. 
 ![Board close up with vibration sensor and 10k resistor](img/IMG_20210916_142948.jpg)
