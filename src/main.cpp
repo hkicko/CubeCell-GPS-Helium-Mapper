@@ -23,7 +23,7 @@ Air530ZClass                  GPS;
 // Comment out/uncomment this line to disable/enable the functionality  where the vibration sensor wakes the device from "deep" sleep (VIBR_SENSOR must be enabled)
 //#define VIBR_WAKE_FROM_SLEEP
 // If put to sleeep from the menu, this will disable the wake up by vibration and only allow it to work when auto sleep was activated in some way (like stopped for too long)
-//#define MENU_SLEEP_DISABLE_VIBR_WAKEUP  
+//#define MENU_SLEEP_DISABLE_VIBR_WAKEUP
 
 #define MOVING_UPDATE_RATE    5000      // Update rate when moving
 #define STOPPED_UPDATE_RATE   60000     // Update rate when stopped
@@ -754,10 +754,12 @@ void switchScreenOnMode()
 
 void autoSleepIfNoGPS()
 {
+  #ifdef MAX_GPS_WAIT
   if (millis() - gpsSearchStart > MAX_GPS_WAIT)
   {
     switchModeToSleep();
   }
+  #endif
 }
 
 #ifdef CAYENNELPP_FORMAT
@@ -928,25 +930,31 @@ void vibration(void)
       if (deviceState == DEVICE_STATE_SLEEP && stoppedCycle > MIN_STOPPED_CYCLES) 
       {
         deviceState = DEVICE_STATE_CYCLE;      
-        stoppedCycle = MIN_STOPPED_CYCLES;
+        stoppedCycle = MIN_STOPPED_CYCLES - 1;
       }  
     }
   }
 }
-#endif
 
 void setVibrAutoWakeUp()
 {
-  // Schedule wake up by vibration if vibration sensor is enabled/available
-  #ifdef VIBR_SENSOR
-  #ifdef VIBR_WAKE_FROM_SLEEP // No need to attach to the interrupt if we won't be using the vibration sensor to wake up from sleep
-  #ifdef MENU_SLEEP_DISABLE_VIBR_WAKEUP // If menu sleep overwrites the "vibration wake up from sleeep", then add the IF statement to not attach to the interrupt when sleep was initiated from the menu
-  if (!sleepActivatedFromMenu)
+  bool setupVibr = !sleepMode; // Default operation is - attach when called, unless in sleep mode
+
+  // Except if we have VIBR_WAKE_FROM_SLEEP enabled, in which case we need to also attach in sleep mode
+  #ifdef VIBR_WAKE_FROM_SLEEP 
+    // But if MENU_SLEEP_DISABLE_VIBR_WAKEUP enabled, only include sleep mode if sleep was not activated from the menu
+    #ifdef MENU_SLEEP_DISABLE_VIBR_WAKEUP
+    if (!sleepActivatedFromMenu)
+    #endif
+      setupVibr = setupVibr | sleepMode;  
   #endif
-  attachInterrupt(VIBR_SENSOR, vibration, FALLING);
-  #endif
-  #endif
+  
+  if (setupVibr)
+  {
+    attachInterrupt(VIBR_SENSOR, vibration, FALLING);
+  }  
 }
+#endif
 
 void executeMenu(void)
 {
@@ -1067,7 +1075,7 @@ void userKey(void)
         {
           menuMode = true;
           currentMenu = 0;
-          stateAfterMenu = deviceState;  
+          stateAfterMenu = DEVICE_STATE_CYCLE;  
           deviceState = DEVICE_STATE_SLEEP;
         }        
       }
@@ -1235,7 +1243,9 @@ void loop()
             stoppedCycle = 0;
             appTxDutyCycle = SLEEPING_UPDATE_RATE;
             sendLastLoc = trackerMode; // After wake up, if tracker mode enabled - send the last known location before waiting for GPS 
+            #ifdef VIBR_SENSOR
             setVibrAutoWakeUp();
+            #endif
         }
         else
         {
@@ -1268,31 +1278,22 @@ void loop()
                 delay(5);
               }
               #endif
-              // Schedule wake up by vibration if vibration sensor is enabled/available
-              #ifdef VIBR_SENSOR
-              #ifndef MAX_STOPPED_CYCLES
-              attachInterrupt(VIBR_SENSOR, vibration, FALLING);
-              #endif
-              #endif
+              
               #ifdef MAX_STOPPED_CYCLES
               // Auto sleep mode - if stopped for too many cycles, go to sleep
               if (stoppedCycle > MAX_STOPPED_CYCLES)
               {
                 switchModeToSleep();
                 appTxDutyCycle = SLEEPING_UPDATE_RATE;
-                setVibrAutoWakeUp();
-              }
-              #ifdef VIBR_SENSOR              
-              else
-              {                
-                attachInterrupt(VIBR_SENSOR, vibration, FALLING);               
               }
               #endif
+              #ifdef VIBR_SENSOR
+              setVibrAutoWakeUp();
               #endif
             }
           }
         }
-        txDutyCycleTime = appTxDutyCycle + randr(0, APP_TX_DUTYCYCLE_RND);
+        txDutyCycleTime = appTxDutyCycle;
         LoRaWAN.cycle(txDutyCycleTime);
       }
       deviceState = DEVICE_STATE_SLEEP;
