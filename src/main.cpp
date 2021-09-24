@@ -1295,7 +1295,10 @@ void loop()
           // }
           autoSleepIfNoGPS(); // If the wait for GPS is too long, automatically go to sleep
           #ifdef VIBR_SENSOR
-          autoSleepIfNoVibr(); // If we can't get GPS fix for VIBR_AUTOSLEEP_TIMEOUT then go to sleep
+          if (!sleepMode) // in case autoSleepIfNoGPS() already did put us to sleep
+          {
+            autoSleepIfNoVibr(); // If we can't get GPS fix for VIBR_AUTOSLEEP_TIMEOUT then go to sleep
+          }
           #endif
         }   
       }
