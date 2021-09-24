@@ -19,11 +19,13 @@ Air530ZClass                  GPS;
 #endif
 
 // Commend out/uncomment this line to disable/enable the auto sleep/wake up by vibration sensor feature
-//#define VIBR_SENSOR           GPIO7     // Change the pin where the sensor is connected if different
+#define VIBR_SENSOR           GPIO5     // Change the pin where the sensor is connected if different
 // Comment out/uncomment this line to disable/enable the functionality  where the vibration sensor wakes the device from "deep" sleep (VIBR_SENSOR must be enabled)
 //#define VIBR_WAKE_FROM_SLEEP
 // If put to sleeep from the menu, this will disable the wake up by vibration and only allow it to work when auto sleep was activated in some way (like stopped for too long)
-//#define MENU_SLEEP_DISABLE_VIBR_WAKEUP
+#define MENU_SLEEP_DISABLE_VIBR_WAKEUP
+// Enable this to activate the auto sleep on no vibration function for the cases when the device is left stationary indoors and GPS generates fake movement so it can't go to sleep 
+#define VIBR_AUTOSLEEP_TIMEOUT 300000
 
 #define GPS_READ_RATE         1000      // How often to read GPS 
 #define MOVING_UPDATE_RATE    15000     // Update rate when moving
@@ -31,7 +33,7 @@ Air530ZClass                  GPS;
 #define SLEEPING_UPDATE_RATE  21600000  // Update every 6hrs when sleeping
 #define MAX_GPS_WAIT          660000    // Max time to wait for GPS before going to sleep
 #define MIN_STOPPED_CYCLES    2         // How many consecutive MOVING_UPDATE_RATE cycles after detecting no movement we should switch to STOPPED_UPDATE_RATE - this is to improve the experience in walk mode
-//#define MAX_STOPPED_CYCLES    8         // Max consecutive stopped cycles before going to sleep, keep in mind, the first MIN_STOPPED_CYCLES of these will be at MOVING_UPDATE_RATE and the next after that will be at STOPPED_UPDATE_RATE
+#define MAX_STOPPED_CYCLES    5         // Max consecutive stopped cycles before going to sleep, keep in mind, the first MIN_STOPPED_CYCLES of these will be at MOVING_UPDATE_RATE and the next after that will be at STOPPED_UPDATE_RATE
 #define VBAT_CORRECTION       1.004     // Edit this for calibrating your battery voltage
 //#define CAYENNELPP_FORMAT   
 
@@ -194,6 +196,9 @@ uint32_t  movingUpdateRate        = MOVING_UPDATE_RATE;
 bool      displayBatPct           = false;
 bool      sleepActivatedFromMenu  = false;
 bool      gpsTimerSet             = false;
+#ifdef VIBR_AUTOSLEEP_TIMEOUT
+uint32_t  lastVibrEvent           = 0;
+#endif
 enum eDeviceState_LoraWan stateAfterMenu;
 
 bool      trackerMode         = false;
@@ -751,6 +756,9 @@ void switchModeOutOfSleep()
   stoppedCycle = 0;
   loopingInSend = false;
   clearSpeedHistory();
+  #ifdef VIBR_AUTOSLEEP_TIMEOUT
+  lastVibrEvent = millis(); // reset variable to prevent auto sleep immediately after wake up
+  #endif
 }
 
 void switchScrenOffMode()
@@ -932,6 +940,9 @@ void vibration(void)
 {
   detachInterrupt(VIBR_SENSOR);
   //stoppedCycle = 0;
+  #ifdef VIBR_AUTOSLEEP_TIMEOUT
+  lastVibrEvent = millis();
+  #endif
   
   #ifdef DEBUG
   Serial.println("Vibration detected");
@@ -991,6 +1002,17 @@ void setVibrAutoWakeUp()
   {
     attachInterrupt(VIBR_SENSOR, vibration, FALLING);
   }  
+}
+
+void autoSleepIfNoVibr()
+{
+  #ifdef VIBR_AUTOSLEEP_TIMEOUT          
+  // if too long since last vibration, force it to go to sleep
+  if (millis() - lastVibrEvent > VIBR_AUTOSLEEP_TIMEOUT)
+  {
+    switchModeToSleep();    
+  }          
+  #endif  
 }
 #endif
 
@@ -1265,6 +1287,9 @@ void loop()
           //   displayGPSWaitWithCounter();
           // }
           autoSleepIfNoGPS(); // If the wait for GPS is too long, automatically go to sleep
+          #ifdef VIBR_SENSOR
+          autoSleepIfNoVibr(); // If we can't get GPS fix for VIBR_AUTOSLEEP_TIMEOUT then go to sleep
+          #endif
         }   
       }
       break;
@@ -1278,6 +1303,10 @@ void loop()
       }
       else
       {
+        #ifdef VIBR_SENSOR
+        autoSleepIfNoVibr();
+        #endif
+
         // Schedule next packet transmission
         if (sleepMode)
         {
@@ -1328,12 +1357,12 @@ void loop()
                 appTxDutyCycle = SLEEPING_UPDATE_RATE;
               }
               #endif
-              #ifdef VIBR_SENSOR
-              setVibrAutoWakeUp();
-              #endif
             }
           }
         }
+        #ifdef VIBR_SENSOR
+        setVibrAutoWakeUp();
+        #endif
         txDutyCycleTime = appTxDutyCycle;
         LoRaWAN.cycle(txDutyCycleTime);
       }
