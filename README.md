@@ -17,6 +17,7 @@ The Sleep menu option puts the GPS in a sleep mode. The sleep mode decreases the
 Pressing the user button while in sleep mode wakes it up and resumes normal operation.
 
 Revision changes:
+- Fixed a bug in Tracker mode - after wake up, go to SEND instead of CYCLE
 - Removed the randomizaton of the send interval, made MAX_GPS_WAIT optional, fixed issue with the vibration handling
 - Tracker mode
 - Added option to disable wake up on vibration when sleep was activated from the menu

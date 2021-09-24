@@ -726,7 +726,14 @@ void switchModeOutOfSleep()
   }
   #endif
   startGPS();      
-  deviceState = DEVICE_STATE_CYCLE;
+  if (sendLastLoc) // If we are in tracker mode and we have to send last known location on wake up - go to SEND immediately 
+  {
+    deviceState = DEVICE_STATE_SEND;
+  }
+  else
+  {
+    deviceState = DEVICE_STATE_CYCLE;
+  }
   stoppedCycle = 0;
   loopingInSend = false;
   clearSpeedHistory();
