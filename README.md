@@ -34,23 +34,29 @@ Revision changes:
 
 **Note: If you prefer to use Arduino IDE, just take the \src\main.cpp file and rename it to "something".ino (for example CubeCell_GPS_Helium_Mapper.ino)**
 
-- Install Serial Driver
-Find Directions [here.](https://heltec-automation-docs.readthedocs.io/en/latest/general/establish_serial_connection.html)
+Install Serial Driver. Find directions [here.](https://heltec-automation-docs.readthedocs.io/en/latest/general/establish_serial_connection.html)
 
-- Install Visual Studio Code
-https://code.visualstudio.com/Download
+Install [Visual Studio Code](https://code.visualstudio.com/Download). If you are using Windows, make sure the pick the System installer, not the User installer.
 
-- Install PlatformIO IDE
-https://marketplace.visualstudio.com/items?itemName=platformio.platformio-ide
+(Optional) When the Get Started wizard prompts you to install language extensions - install the C/C++ extension.
 
+Install Git from https://git-scm.com/downloads or https://github.com/git-guides/install-git
 
-- Clone this repository and open the folder
+Reboot your computer for the path changes to take effect.
 
-Edit file main.cpp in folder \src.
+Install the GitHub Pull Requests and Issues extension from the link [here](https://code.visualstudio.com/docs/editor/github).
 
-Comment out/uncomment the appropriate line for your board version (for GPS Air530 or Air530Z)
+Install [PlatformIO IDE](https://marketplace.visualstudio.com/items?itemName=platformio.platformio-ide)
 
-Comment out/uncomment the #define lines for VIBR_SENSOR, VIBR_WAKE_FROM_SLEEP, MAX_STOPPED_CYCLES and edit the values for the timers if desired 
+Once you are in Visual Studio Code, go to the Explorer and click Clone Repository. When prompted for location, if you want to use the default location (and you are using Windows) do the following - select your Documents folder, if there is no PlatformIO sub-folder in it - create one and enter it, then if there is no Projects sub-folder inside - create it and select it as the location for the cloned repository. So the final location would be %userprofile%\Documents\PlatformIO\Projects
+
+Open the cloned folder
+
+Open the main.cpp from src folder and wait. Initially the #include directives at the top will have squiggly lines as unknown, but relatively soon (within 5 min) PlatformIO will detect and install the required platform and libraries. If you don't want to wait, open PlatformIO and go to Platforms and install "ASR Microelectronics ASR650x". You can do that as a step right after installing PlatformIO.
+
+Comment out/uncomment the appropriate line for your board version (for GPS Air530 or Air530Z).
+
+Comment out/uncomment the #define lines for VIBR_SENSOR, VIBR_WAKE_FROM_SLEEP, MENU_SLEEP_DISABLE_VIBR_WAKEUP, MAX_GPS_WAIT, MAX_STOPPED_CYCLES and edit the values for the timers if desired.
 
 Enter DevEUI(msb), AppEUI(msb), and AppKey(msb) from Helium Console, at the respective places in main.cpp. The values must be in MSB format. From console press the expand button to get the ID's as shown below.
 
@@ -64,11 +70,11 @@ uint8_t appKey[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 
 Modify platformio.ini if you need to change LoRaWAN settings like region.
 
-Click the PlatformIO: Build button
+Click the PlatformIO: Build button. Address any compile errors and repeat until you get a clean build.
 
-Connect the CubeCell to the computer with USB cable
+Connect the CubeCell to the computer with USB cable.
 
-Click the PlatformIO: Upload button
+Click the PlatformIO: Upload button.
 
 # Debug using Serial connection via USB
 
