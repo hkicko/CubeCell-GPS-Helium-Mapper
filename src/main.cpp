@@ -1235,7 +1235,7 @@ void loop()
       }
       else 
       {  
-        if (sendLastLoc)
+        if (sendLastLoc && last_lat != 0)
         {
           appPort = APP_PORT_LASTLOC;
           if (prepareTxFrame(appPort))
