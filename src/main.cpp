@@ -203,6 +203,7 @@ enum eDeviceState_LoraWan stateAfterMenu;
 
 bool      trackerMode         = false;
 bool      sendLastLoc         = false;
+bool      lastLocSet          = false;
 uint32_t  last_lat            = 0;
 uint32_t  last_lon            = 0;
 
@@ -691,6 +692,7 @@ void cycleGPS()
     {
       last_lat    = ((GPS.location.lat() + 90) / 180.0) * 16777215;
       last_lon    = ((GPS.location.lng() + 180) / 360.0) * 16777215;
+      lastLocSet  = true;
     }
   }
   else
@@ -1235,7 +1237,7 @@ void loop()
       }
       else 
       {  
-        if (sendLastLoc && last_lat != 0)
+        if (sendLastLoc && lastLocSet)
         {
           appPort = APP_PORT_LASTLOC;
           if (prepareTxFrame(appPort))
