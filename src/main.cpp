@@ -978,17 +978,18 @@ void vibration(void)
       switchModeOutOfSleep();
       #endif
     }
-    else
-    {
-      // We use vibration to shorten the "stopped update rate" cycle. Meaning - if we reached the point where it updates at 
-      // stopepd update rate (default 1 min) and there is a vibration before this timer expires, we want to start sending 
-      // and not wait for the timer to expire and then send.     
-      if (deviceState == DEVICE_STATE_SLEEP && stoppedCycle > MIN_STOPPED_CYCLES) 
-      {
-        deviceState = DEVICE_STATE_CYCLE;      
-        stoppedCycle = MIN_STOPPED_CYCLES - 1;
-      }  
-    }
+    // With GPS timer this is no longer needed, it just generates unnecessary transmisisons when we are not moving but there are slight vibrations
+    // else
+    // {
+    //   // We use vibration to shorten the "stopped update rate" cycle. Meaning - if we reached the point where it updates at 
+    //   // stopepd update rate (default 1 min) and there is a vibration before this timer expires, we want to start sending 
+    //   // and not wait for the timer to expire and then send.     
+    //   if (deviceState == DEVICE_STATE_SLEEP && stoppedCycle > MIN_STOPPED_CYCLES) 
+    //   {
+    //     deviceState = DEVICE_STATE_CYCLE;      
+    //     stoppedCycle = MIN_STOPPED_CYCLES - 1;
+    //   }  
+    // }
   }
 }
 
