@@ -638,7 +638,7 @@ void displayGPSWaitWithCounter()
     index = sprintf(str,"%d", (millis() - gpsSearchStart) / 1000);
     str[index] = 0; 
     display.setTextAlignment(TEXT_ALIGN_RIGHT);  
-    display.drawString(128, 54-16/2, str);          
+    display.drawString(128, 54-16/2, str);
     display.display();
     lastScreenPrint = millis();
   }  
@@ -672,9 +672,9 @@ void cycleGPS()
     }
 
     if (GPS.location.isUpdated() || GPS.speed.isUpdated())
-    {      
+    {
       break;
-    } 
+    }
     else
     {
       if (loopingInSend && !screenOffMode)
@@ -853,7 +853,7 @@ bool prepareTxFrame(uint8_t port)
 
   uint32_t  lat, lon;
   int       alt, course, speed, hdop, sats;
-
+  
   unsigned char *puc;
   bool      ret = false;
   
@@ -954,21 +954,21 @@ void vibration(void)
   lastVibrEvent = millis();
   #endif
   
-  #ifdef DEBUG
-  Serial.println("Vibration detected");
-  switch (deviceState)
-  {
-    case DEVICE_STATE_SLEEP:
-      Serial.println("Curent State = SLEEP");
-      break;
-    case DEVICE_STATE_SEND:
-      Serial.println("Curent State = SEND");
-      break;
-    case DEVICE_STATE_CYCLE:
-      Serial.println("Current State = CYCLE");
-      break;    
-  }
-  #endif
+  // #ifdef DEBUG
+  // Serial.println("Vibration detected");
+  // switch (deviceState)
+  // {
+  //   case DEVICE_STATE_SLEEP:
+  //     Serial.println("Curent State = SLEEP");
+  //     break;
+  //   case DEVICE_STATE_SEND:
+  //     Serial.println("Curent State = SEND");
+  //     break;
+  //   case DEVICE_STATE_CYCLE:
+  //     Serial.println("Current State = CYCLE");
+  //     break;    
+  // }
+  // #endif
   
   if (!menuMode) // Ignore vibrations while in the menu
   {
