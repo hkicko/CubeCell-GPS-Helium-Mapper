@@ -31,6 +31,7 @@ Air530ZClass                  GPS;
 #define MAX_GPS_WAIT          660000    // Max time to wait for GPS before going to sleep
 #define MIN_STOPPED_CYCLES    5         // How many consecutive MOVING_UPDATE_RATE cycles after detecting no movement we should switch to STOPPED_UPDATE_RATE - this is to improve the experience in walk mode
 //#define MAX_STOPPED_CYCLES    8         // Max consecutive stopped cycles before going to sleep, keep in mind, the first MIN_STOPPED_CYCLES of these will be at MOVING_UPDATE_RATE and the next after that will be at STOPPED_UPDATE_RATE
+#define MENU_IDLE_TIMEOUT     30000     // Auto exit the menu if no button pressed in this amount of ms
 #define VBAT_CORRECTION       1.004     // Edit this for calibrating your battery voltage
 //#define CAYENNELPP_FORMAT   
 
@@ -217,6 +218,9 @@ enum eMenuEntries
 };
 
 void userKey();
+
+// Timer to auto close the menu after certain period of inactivity
+static TimerEvent_t menuIdleTimeout;
 
 int32_t fracPart(double val, int n)
 {
@@ -965,8 +969,26 @@ void setVibrAutoWakeUp()
 }
 #endif
 
+static void OnMenuIdleTimeout()
+{
+  TimerStop(&menuIdleTimeout);
+
+  if (menuMode)
+  {
+    menuMode = false;
+    deviceState = stateAfterMenu;
+    if (!screenOffMode)
+    {
+      display.clear();
+      display.display();
+    }
+  }
+}
+
 void executeMenu(void)
 {
+  TimerStop(&menuIdleTimeout);
+  
   switch (currentMenu)
   {
     case SCREEN_OFF:
@@ -1087,6 +1109,8 @@ void userKey(void)
           stateAfterMenu = DEVICE_STATE_CYCLE;  
           deviceState = DEVICE_STATE_SLEEP;
         }        
+        TimerSetValue(&menuIdleTimeout, MENU_IDLE_TIMEOUT);
+        TimerStart(&menuIdleTimeout);
       }
     }
     else
@@ -1135,6 +1159,8 @@ void setup()
   #ifdef VIBR_SENSOR
   pinMode(VIBR_SENSOR, INPUT);
   #endif
+
+  TimerInit(&menuIdleTimeout, OnMenuIdleTimeout);
 }
 
 void loop()
@@ -1340,8 +1366,11 @@ void loop()
           isDispayOn = 0;
         }
       }
-      //cycleGPS();
-      LoRaWAN.sleep();   
+      
+      if (deviceState == DEVICE_STATE_SLEEP) // because the exit from the menu may change it to Cycle or Send and we don't want to go to sleep without having scheduled a wakeup
+      {
+        LoRaWAN.sleep();
+      }
       break;
     }
     default:
