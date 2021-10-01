@@ -1347,10 +1347,7 @@ void loop()
         {
             stoppedCycle = 0;
             appTxDutyCycle = SLEEPING_UPDATE_RATE;
-            sendLastLoc = trackerMode; // After wake up, if tracker mode enabled - send the last known location before waiting for GPS 
-            #ifdef VIBR_SENSOR
-            setVibrAutoWakeUp();
-            #endif
+            sendLastLoc = trackerMode; // After wake up, if tracker mode enabled - send the last known location before waiting for GPS             
         }
         else
         {
