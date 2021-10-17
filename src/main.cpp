@@ -19,31 +19,21 @@ Air530ZClass                  GPS;
 #endif
 
 // Commend out/uncomment this line to disable/enable the auto sleep/wake up by vibration sensor feature
-#define VIBR_SENSOR           GPIO5     // Change the pin where the sensor is connected if different
+//#define VIBR_SENSOR           GPIO5     // Change the pin where the sensor is connected if different
 // Comment out/uncomment this line to disable/enable the functionality  where the vibration sensor wakes the device from "deep" sleep (VIBR_SENSOR must be enabled)
 //#define VIBR_WAKE_FROM_SLEEP
 // If put to sleeep from the menu, this will disable the wake up by vibration and only allow it to work when auto sleep was activated in some way (like stopped for too long)
-#define MENU_SLEEP_DISABLE_VIBR_WAKEUP
+//#define MENU_SLEEP_DISABLE_VIBR_WAKEUP
 // Enable this to activate the auto sleep on no vibration function for the cases when the device is left stationary indoors and GPS generates fake movement so it can't go to sleep 
-#define VIBR_AUTOSLEEP_TIMEOUT 300000
+//#define VIBR_AUTOSLEEP_TIMEOUT 300000
 
-#define GPS_READ_RATE         1000      // How often to read GPS 
-#define MOVING_UPDATE_RATE    15000     // Update rate when moving
-#define STOPPED_UPDATE_RATE   300000    // Update rate when stopped
-#define SLEEPING_UPDATE_RATE  21600000  // Update every 6hrs when sleeping
-#define MAX_GPS_WAIT          660000    // Max time to wait for GPS before going to sleep
-#define MIN_STOPPED_CYCLES    2         // How many consecutive MOVING_UPDATE_RATE cycles after detecting no movement we should switch to STOPPED_UPDATE_RATE - this is to improve the experience in walk mode
-#define MAX_STOPPED_CYCLES    5         // Max consecutive stopped cycles before going to sleep, keep in mind, the first MIN_STOPPED_CYCLES of these will be at MOVING_UPDATE_RATE and the next after that will be at STOPPED_UPDATE_RATE
+#define GPS_READ_RATE         1000      // How often to read GPS (in ms)
+#define MIN_DIST              25        // Minimum distance in meters from the last sent location before we can send again. A hex is about 340m, divide by this value to get the pings per hex.
+#define MAX_GPS_WAIT          660000    // Max time to wait for GPS before going to sleep (in ms)
+#define AUTO_SLEEP_TIMER      300000    // If no movement for this amount of time (in ms), the device will go to sleep. Comment out if you don't want this feature. 
 #define MENU_IDLE_TIMEOUT     30000     // Auto exit the menu if no button pressed in this amount of ms
 #define VBAT_CORRECTION       1.004     // Edit this for calibrating your battery voltage
 //#define CAYENNELPP_FORMAT   
-
-/*
-  How many past readings to use for avg speed calc.
-  This is also the number of "good" readings we need before sending.
-  "Good" readings are readings not older than 1s.
-*/
-#define SPEED_HISTORY_BUFFER_SIZE 5     
 
 /*
    set LoraWan_RGB to Active,the RGB active in loraWan
@@ -186,45 +176,46 @@ bool      screenOffMode           = false; // Enable normal operation with the s
 uint32_t  lastScreenPrint         = 0;
 uint32_t  joinStart               = 0;
 uint32_t  gpsSearchStart          = 0;
-double    speedHistory[SPEED_HISTORY_BUFFER_SIZE];
-uint8_t   speedHistoryPointer     = 0;
-uint8_t   spdHistBuffFull         = 0; /* Counter to tell us how full the buffer is - we want it min SPEED_HISTORY_BUFFER_SIZE before we 
-                                        could send and we use that instead of waiting a specific time for the readings to "stabilize" */
-float     avgSpeed                = 0;
-int       stoppedCycle            = 0;
+uint32_t  lastSend                = 0;
 int       currentMenu             = 0;
-uint32_t  movingUpdateRate        = MOVING_UPDATE_RATE;
-bool      displayBatPct           = false;
+bool      displayBatPct           = false; // Change here if you want to see the battery as percent vs voltage (not recommended because it is inacurate unless you go edit some min and max voltage values in the base libraries with values specific to your battery)
 bool      sleepActivatedFromMenu  = false;
 bool      gpsTimerSet             = false;
 #ifdef VIBR_AUTOSLEEP_TIMEOUT
 uint32_t  lastVibrEvent           = 0;
 #endif
-enum eDeviceState_LoraWan stateAfterMenu;
 
-bool      trackerMode         = false;
-bool      sendLastLoc         = false;
-bool      lastLocSet          = false;
-uint32_t  last_lat            = 0;
-uint32_t  last_lon            = 0;
+bool      trackerMode             = false;
+bool      sendLastLoc             = false;
+bool      lastLocSet              = false;
+uint32_t  last_lat                = 0;
+uint32_t  last_lon                = 0;
+double    last_send_lat           = 0;
+double    last_send_lon           = 0;
+uint32_t  min_dist_moved          = MIN_DIST;
+uint32_t  dist_moved              = UINT32_MAX;
+bool      nonstopMode             = false;
 
 #define MENU_CNT 8
 
-char* menu[MENU_CNT] = {"Screen OFF", "Sleep", "Debug Info", "Faster Upd", "Slower Upd", "Tracker mode", "Reset GPS", "Bat V/%"};
+char* menu[MENU_CNT] = {"Screen OFF", "Sleep", "Send now", "Faster Upd", "Slower Upd", "Tracker mode", "Nonstop mode", "Debug Info"}; //"Reset GPS", "Bat V/%"
 
 enum eMenuEntries
 {
   SCREEN_OFF,
   SLEEP,
-  DEBUG_INFO,
+  SEND_NOW,
   FASTER_UPD,
   SLOWER_UPD,
   TRACKER_MODE,
-  RESET_GPS,
-  BAT_V_PCT
+  NONSTOP_MODE,
+  DEBUG_INFO
+  //RESET_GPS,
+  //BAT_V_PCT
 };
 
 void userKey();
+void setVibrAutoWakeUp();
 
 // Timer to schedule wake ups for GPS read before going to sleep 
 static TimerEvent_t GPSCycleTimer;
@@ -250,63 +241,6 @@ void VextOFF(void)
   digitalWrite(Vext, HIGH);
 }
 
-void clearSpeedHistory()
-{
-  for (int i = 0; i < SPEED_HISTORY_BUFFER_SIZE; i++)
-  {
-    speedHistory[i] = 0;
-  }
-  avgSpeed            = 0;
-  speedHistoryPointer = 0;
-  spdHistBuffFull     = 0;
-}
-
-void addSpeedReading(double speedValue)
-{
-  speedHistory[speedHistoryPointer] = speedValue;
-
-  speedHistoryPointer++;
-  if (speedHistoryPointer >= SPEED_HISTORY_BUFFER_SIZE)
-  {
-    speedHistoryPointer = 0;
-  }  
-
-  if (spdHistBuffFull < SPEED_HISTORY_BUFFER_SIZE)
-  {
-    spdHistBuffFull++;
-  }  
-}
-
-bool enoughSpeedHistory()
-{
-  return (spdHistBuffFull == SPEED_HISTORY_BUFFER_SIZE);
-}
-
-void calcAvgSpeed()
-{
-  double total;
-  uint8_t tempPointer = speedHistoryPointer;
-
-  for (int i = 0; i < SPEED_HISTORY_BUFFER_SIZE; i++)
-  {    
-    if (tempPointer == 0)  
-    {
-      tempPointer = SPEED_HISTORY_BUFFER_SIZE;
-    }
-    
-    tempPointer--;
-
-    total += speedHistory[tempPointer];
-  }
-
-  avgSpeed = total / SPEED_HISTORY_BUFFER_SIZE;
-}
-
-bool onTheMove()
-{
-  return avgSpeed > 1.2;
-}
-
 void displayGPSInfo()
 {
   char str[30];
@@ -330,7 +264,7 @@ void displayGPSInfo()
     display.drawString(120, 0, "V");
   }
 
-  if (onTheMove())
+  if (GPS.speed.kmph() > 1.2)
   {
     display.drawString(107, 0, "M");
   }
@@ -407,8 +341,6 @@ void printGPSInfo()
   Serial.print(GPS.course.deg());
   Serial.print(", SPEED: ");
   Serial.println(GPS.speed.kmph());
-  Serial.print("SPEED Average: ");
-  Serial.println(avgSpeed);  
   Serial.println();
 }
 #endif
@@ -598,21 +530,24 @@ void displayDebugInfo()
   display.clear();  
   display.setTextAlignment(TEXT_ALIGN_LEFT);
   display.setFont(ArialMT_Plain_10);
-  index = sprintf(str,"%s: %u", "Update rate", movingUpdateRate);
-  str[index] = 0; 
-  display.drawString(0, 0, str);  
+  index = sprintf(str,"%s: %um", "Update every", min_dist_moved);
+  str[index] = 0;
+  display.drawString(0, 0, str);
+  index = sprintf(str,"%s: %um", "Current distance", dist_moved);
+  str[index] = 0;
+  display.drawString(0, 10, str);
   index = sprintf(str,"%s: %u", "loopingInSend", loopingInSend);
-  str[index] = 0; 
-  display.drawString(0, 10, str);  
-  index = sprintf(str,"%s: %u", "LoRaJoined", IsLoRaMacNetworkJoined);
-  str[index] = 0; 
-  display.drawString(0, 20, str);  
-  index = sprintf(str,"%s: %i", "DR", loraDataRate());
-  str[index] = 0; 
-  display.drawString(0, 30, str);    
+  str[index] = 0;
+  display.drawString(0, 20, str);
+  index = sprintf(str,"%s: %u DR: %i", "LoRaJoined", IsLoRaMacNetworkJoined, loraDataRate());
+  str[index] = 0;
+  display.drawString(0, 30, str);
   index = sprintf(str,"%s: %i", "Tracker mode", trackerMode);
-  str[index] = 0; 
-  display.drawString(0, 40, str);    
+  str[index] = 0;
+  display.drawString(0, 40, str);
+  index = sprintf(str,"%s: %i", "Nonstop mode", nonstopMode);
+  str[index] = 0;
+  display.drawString(0, 50, str);
   display.display();
 
   delay(4000);    
@@ -646,7 +581,7 @@ void displayGPSWaitWithCounter()
 
 void startGPS()
 {
-  GPS.begin();
+  GPS.begin(); // If you are sure that you have selected the right include directive for your GPS chip, you can use GPS.begin(115200) here. 
   // Air530Z code has setmode(MODE_GPS_BEIDOU_GLONASS) call in begin(), but for Air530 we will need to set it ourselves
   #ifdef GPS_Air530_H
   GPS.setmode(MODE_GPS_GLONASS); //Enable dual mode - GLONASS and GPS   
@@ -658,9 +593,8 @@ void cycleGPS()
 {
   uint32_t cycleGPStimer;
 
-  // read the location and speed to clear the updated flags
-  GPS.location.rawLat(); 
-  GPS.speed.value();
+  // read the location to clear the updated flag
+  GPS.location.rawLat();
 
   cycleGPStimer = millis();  
 
@@ -671,7 +605,7 @@ void cycleGPS()
       GPS.encode(GPS.read());
     }
 
-    if (GPS.location.isUpdated() || GPS.speed.isUpdated())
+    if (GPS.location.isUpdated())
     {
       break;
     }
@@ -685,27 +619,21 @@ void cycleGPS()
   }
 
   if (GPS.location.age() < GPS_READ_RATE)
-  {    
-    addSpeedReading(GPS.speed.kmph());
-    calcAvgSpeed();   
+  {
+    dist_moved = GPS.distanceBetween(last_send_lat, last_send_lon, GPS.location.lat(), GPS.location.lng());
 
-    if (trackerMode) // store the last lat/long 
+    if (trackerMode) // store the last lat/long
     {
       last_lat    = ((GPS.location.lat() + 90) / 180.0) * 16777215;
       last_lon    = ((GPS.location.lng() + 180) / 360.0) * 16777215;
       lastLocSet  = true;
     }
   }
-  else
-  {
-    clearSpeedHistory(); // Force the start of new collection of good values    
-  }
 }
 
 void stopGPS()
 {
   GPS.end();
-  clearSpeedHistory();
 }
 
 void switchModeToSleep()
@@ -728,9 +656,13 @@ void switchModeToSleep()
     Serial.println("Going to sleep...");
   }
   #endif
-  stopGPS();        
-  deviceState = DEVICE_STATE_CYCLE;  
-  stoppedCycle = 0;
+  stopGPS();
+  Radio.Sleep(); // Not sure this is needed. It is called by LoRaAPP.cpp in various places after TX done or timeout. Most probably in 99% of the cases it will be already called when we get here. 
+  sendLastLoc = trackerMode; // After wake up, if tracker mode enabled - send the last known location before waiting for GPS
+  #ifdef VIBR_SENSOR
+  setVibrAutoWakeUp();
+  #endif
+  deviceState = DEVICE_STATE_SLEEP;
 }
 
 void switchModeOutOfSleep()
@@ -754,20 +686,21 @@ void switchModeOutOfSleep()
     Serial.println("Waking Up...");
   }
   #endif
-  startGPS();      
+  startGPS();
   if (sendLastLoc) // If we are in tracker mode and we have to send last known location on wake up - go to SEND immediately 
   {
     deviceState = DEVICE_STATE_SEND;
   }
   else
   {
-    deviceState = DEVICE_STATE_CYCLE;
+    deviceState = DEVICE_STATE_SLEEP;
   }
-  stoppedCycle = 0;
   loopingInSend = false;
-  clearSpeedHistory();
   #ifdef VIBR_AUTOSLEEP_TIMEOUT
   lastVibrEvent = millis(); // reset variable to prevent auto sleep immediately after wake up
+  #endif
+  #ifdef AUTO_SLEEP_TIMER
+  lastSend = millis(); // reset variable to prevent auto sleep immediately after wake up
   #endif
 }
 
@@ -794,7 +727,7 @@ void switchScreenOnMode()
 void autoSleepIfNoGPS()
 {
   #ifdef MAX_GPS_WAIT
-  if (millis() - gpsSearchStart > MAX_GPS_WAIT)
+  if (!nonstopMode && (millis() - gpsSearchStart > MAX_GPS_WAIT))
   {
     switchModeToSleep();
   }
@@ -809,13 +742,13 @@ static void OnGPSCycleTimerEvent()
   {
     cycleGPS();  
 
-    // if we detect movement while in stopped mode, then go to send right away
-    if (onTheMove() && appTxDutyCycle > movingUpdateRate)
+    // if we moved more than min_dist_moved, then send
+    if (dist_moved >= min_dist_moved)
     {
       deviceState = DEVICE_STATE_SEND;
     }
   }
-  gpsTimerSet = false; 
+  gpsTimerSet = false;
 }
 
 #ifdef CAYENNELPP_FORMAT
@@ -865,12 +798,15 @@ bool prepareTxFrame(uint8_t port)
       
       if (GPS.location.isValid())
       {
-        lat     = ((GPS.location.lat() + 90) / 180.0) * 16777215;
-        lon     = ((GPS.location.lng() + 180) / 360.0) * 16777215;
+        last_send_lat = GPS.location.lat(); // store the value for distance calculation
+        last_send_lon = GPS.location.lng(); // store the value for distance calculation
+
+        lat     = ((last_send_lat + 90) / 180.0) * 16777215;
+        lon     = ((last_send_lon + 180) / 360.0) * 16777215;
 
         alt     = (uint16_t)GPS.altitude.meters();
         course  = GPS.course.deg();
-        speed   = (uint16_t)avgSpeed;  
+        speed   = (uint16_t)GPS.speed.kmph();
         sats    = GPS.satellites.value();
         hdop    = GPS.hdop.hdop();
 
@@ -949,7 +885,6 @@ bool prepareTxFrame(uint8_t port)
 void vibration(void)
 {
   detachInterrupt(VIBR_SENSOR);
-  //stoppedCycle = 0;
   #ifdef VIBR_AUTOSLEEP_TIMEOUT
   lastVibrEvent = millis();
   #endif
@@ -980,29 +915,17 @@ void vibration(void)
       #endif  
       switchModeOutOfSleep();
       #endif
-    }
-    // With GPS timer this is no longer needed, it just generates unnecessary transmisisons when we are not moving but there are slight vibrations
-    // else
-    // {
-    //   // We use vibration to shorten the "stopped update rate" cycle. Meaning - if we reached the point where it updates at 
-    //   // stopepd update rate (default 1 min) and there is a vibration before this timer expires, we want to start sending 
-    //   // and not wait for the timer to expire and then send.     
-    //   if (deviceState == DEVICE_STATE_SLEEP && stoppedCycle > MIN_STOPPED_CYCLES) 
-    //   {
-    //     deviceState = DEVICE_STATE_CYCLE;      
-    //     stoppedCycle = MIN_STOPPED_CYCLES - 1;
-    //   }  
-    // }
+    }    
   }
 }
 
 void setVibrAutoWakeUp()
 {
-  bool setupVibr = !sleepMode; // Default operation is - attach when called, unless in sleep mode
+  bool setupVibr = false; // Default operation is - don't wait for vibration
 
-  // Except if we have VIBR_WAKE_FROM_SLEEP enabled, in which case we need to also attach in sleep mode
+  // Except if we have VIBR_WAKE_FROM_SLEEP enabled, in which case we need to attach in sleep mode
   #ifdef VIBR_WAKE_FROM_SLEEP 
-    // But if MENU_SLEEP_DISABLE_VIBR_WAKEUP enabled, only include sleep mode if sleep was not activated from the menu
+    // But if MENU_SLEEP_DISABLE_VIBR_WAKEUP enabled, only if sleep was not activated from the menu
     #ifdef MENU_SLEEP_DISABLE_VIBR_WAKEUP
     if (!sleepActivatedFromMenu)
     #endif
@@ -1019,13 +942,23 @@ void autoSleepIfNoVibr()
 {
   #ifdef VIBR_AUTOSLEEP_TIMEOUT          
   // if too long since last vibration, force it to go to sleep
-  if (millis() - lastVibrEvent > VIBR_AUTOSLEEP_TIMEOUT)
+  if (!nonstopMode && (millis() - lastVibrEvent > VIBR_AUTOSLEEP_TIMEOUT))
   {
     switchModeToSleep();    
   }          
   #endif  
 }
 #endif
+
+void autoSleepIfNoMovement()
+{
+  #ifdef AUTO_SLEEP_TIMER
+  if (!nonstopMode && (millis() - lastSend > AUTO_SLEEP_TIMER))
+  {
+    switchModeToSleep();
+  }
+  #endif
+}
 
 static void OnMenuIdleTimeout()
 {
@@ -1034,7 +967,6 @@ static void OnMenuIdleTimeout()
   if (menuMode)
   {
     menuMode = false;
-    deviceState = stateAfterMenu;
     if (!screenOffMode)
     {
       display.clear();
@@ -1051,65 +983,66 @@ void executeMenu(void)
   {
     case SCREEN_OFF:
       switchScrenOffMode();
-      deviceState = stateAfterMenu;
       menuMode = false;      
       break;
 
     case SLEEP:
-      switchModeToSleep();         
-      menuMode = false;
       sleepActivatedFromMenu = true;
+      switchModeToSleep();
+      menuMode = false;
       break;
 
-    case DEBUG_INFO:
-      displayDebugInfo();
-      deviceState = stateAfterMenu;
+    case SEND_NOW:
+      deviceState = DEVICE_STATE_SEND;
       menuMode = false;
       break;
 
     case FASTER_UPD:
-      if (movingUpdateRate > 1000)
+      if (min_dist_moved > 10)
       {
-        movingUpdateRate -= 1000;
+        min_dist_moved -= 10;
       }
-      deviceState = DEVICE_STATE_CYCLE;  
-      stoppedCycle = 0;
       menuMode = false;
       break;
 
     case SLOWER_UPD:
-      if (movingUpdateRate < STOPPED_UPDATE_RATE)
+      if (min_dist_moved < 500)
       {
-        movingUpdateRate += 1000;
+        min_dist_moved += 10;
       }
-      deviceState = DEVICE_STATE_CYCLE;  
-      stoppedCycle = 0;
       menuMode = false;
       break;
 
     case TRACKER_MODE:
       trackerMode = !trackerMode;
-      deviceState = stateAfterMenu;
       menuMode = false;
       break;
 
-    case RESET_GPS:
-      stopGPS();
-      delay(1000);
-      startGPS();
-      deviceState = DEVICE_STATE_CYCLE;  
+    case NONSTOP_MODE:
+      nonstopMode = !nonstopMode;
       menuMode = false;
       break;
 
-    case BAT_V_PCT:
-      displayBatPct = !displayBatPct;
-      deviceState = stateAfterMenu;
+    case DEBUG_INFO:
+      displayDebugInfo();
       menuMode = false;
       break;
-    
+
+    // case RESET_GPS:
+    //   stopGPS();
+    //   delay(1000);
+    //   startGPS();
+    //   deviceState = DEVICE_STATE_CYCLE;  
+    //   menuMode = false;
+    //   break;
+
+    // case BAT_V_PCT:
+    //   displayBatPct = !displayBatPct;
+    //   menuMode = false;
+    //   break;
+
     default:
       menuMode = false;
-      deviceState = stateAfterMenu;
       break;
   }
   if (!screenOffMode)
@@ -1164,7 +1097,6 @@ void userKey(void)
         {
           menuMode = true;
           currentMenu = 0;
-          stateAfterMenu = DEVICE_STATE_CYCLE;  
           deviceState = DEVICE_STATE_SLEEP;
         }        
         TimerSetValue(&menuIdleTimeout, MENU_IDLE_TIMEOUT);
@@ -1248,17 +1180,12 @@ void loop()
     }
     case DEVICE_STATE_SEND:
     {
-      if (menuMode) // User pressed the button while we were waiting for the next send timer
+      if (menuMode || sleepMode)
       {
-        stateAfterMenu = deviceState; // If while waiting inside the menu, a Cycle timer ended and sent us here, after exiting the menu, don't waste time going back to Cycle, go directly to Send
         deviceState = DEVICE_STATE_SLEEP;
       }
-      else if (sleepMode)
+      else
       {
-        deviceState = DEVICE_STATE_CYCLE; // Send to Cycle so it could setup a sleep timer if not done yet
-      }
-      else 
-      {  
         if (sendLastLoc && lastLocSet)
         {
           appPort = APP_PORT_LASTLOC;
@@ -1280,37 +1207,29 @@ void loop()
         
         cycleGPS(); // Read anything queued in the GPS Serial buffer, parse it and populate the internal variables with the latest GPS data
         
-        if (GPS.location.age() < GPS_READ_RATE)
+        if ((GPS.location.age() < GPS_READ_RATE) && (GPS.hdop.hdop() < 2))
         {
-          // Only send if it had enough time to stabilize, otherwise just display on screen
-          if (enoughSpeedHistory()) 
+          if (prepareTxFrame(appPort)) // Don't send bad data (the method will return false if GPS coordinates are 0)
           {
-            if (prepareTxFrame(appPort)) // Don't send bad data (the method will return false if GPS coordinates are 0)
+            if (!menuMode && !sleepMode) // In case user pressed the button while prepareTxFrame() was running
             {
-              if (!menuMode && !sleepMode) // In case user pressed the button while prepareTxFrame() was running
-              { 
-                if (!screenOffMode)
-                {
-                  LoRaWAN.displaySending();
-                }                
-                LoRaWAN.send();
+              if (!screenOffMode)
+              {
+                LoRaWAN.displaySending();
               }
-              // if (!screenOffMode)
-              // {
-              //   display.sleep();
-              //   isDispayOn = 0;
-              //   VextOFF();
-              // }
+              LoRaWAN.send();
+              #ifdef AUTO_SLEEP_TIMER
+              lastSend = millis();
+              #endif
             }
-            deviceState = DEVICE_STATE_CYCLE; // Schedule next send
+            // if (!screenOffMode)
+            // {
+            //   display.sleep();
+            //   isDispayOn = 0;
+            //   VextOFF();
+            // }
           }
-          else 
-          {
-            if (!sleepMode)
-            {
-              displayGPSInfoEverySecond(); // No need to wakeup the display, if we are looping here, it should be already on
-            }       
-          }
+          deviceState = DEVICE_STATE_SLEEP; // Schedule GPS timer and go to sleep
         }   
         else
         {
@@ -1319,12 +1238,6 @@ void loop()
           //   displayGPSWaitWithCounter();
           // }
           autoSleepIfNoGPS(); // If the wait for GPS is too long, automatically go to sleep
-          #ifdef VIBR_SENSOR
-          if (!sleepMode) // in case autoSleepIfNoGPS() already did put us to sleep
-          {
-            autoSleepIfNoVibr(); // If we can't get GPS fix for VIBR_AUTOSLEEP_TIMEOUT then go to sleep
-          }
-          #endif
         }   
       }
       break;
@@ -1332,72 +1245,15 @@ void loop()
     case DEVICE_STATE_CYCLE:
     {
       loopingInSend = false;
-      if (menuMode)
-      {
-        stateAfterMenu = deviceState; // This may not be necessary, because most of the menu options exist to Cycle anyway, but feels like the right thing to do
-      }
-      else
-      {
-        #ifdef VIBR_SENSOR
-        autoSleepIfNoVibr();
-        #endif
 
-        // Schedule next packet transmission
-        if (sleepMode)
-        {
-            stoppedCycle = 0;
-            appTxDutyCycle = SLEEPING_UPDATE_RATE;
-            sendLastLoc = trackerMode; // After wake up, if tracker mode enabled - send the last known location before waiting for GPS             
-        }
-        else
-        {
-          appTxDutyCycle = movingUpdateRate;
-
-          if (onTheMove())
-          {
-            stoppedCycle = 0;
-            #ifdef DEBUG
-            Serial.println();
-            Serial.print("Speed = ");
-            Serial.print(avgSpeed);
-            Serial.println(" MOVING");
-            #endif
-          }
-          else
-          {
-            stoppedCycle++;
-          
-            if (stoppedCycle > MIN_STOPPED_CYCLES) // Do not switch to STOPPED too fast, wait a few more cycles for movement to resume and only if it does not, then switch
-            { 
-              appTxDutyCycle = STOPPED_UPDATE_RATE;
-              #ifdef DEBUG
-              Serial.println();
-              Serial.print("Speed = ");
-              Serial.print(avgSpeed);
-              Serial.println(" STOPPED");
-              if (screenOffMode)
-              {
-                delay(5);
-              }
-              #endif
-              
-              #ifdef MAX_STOPPED_CYCLES
-              // Auto sleep mode - if stopped for too many cycles, go to sleep
-              if (stoppedCycle > MAX_STOPPED_CYCLES)
-              {
-                switchModeToSleep();
-                appTxDutyCycle = SLEEPING_UPDATE_RATE;
-              }
-              #endif
-            }
-          }
-        }
-        #ifdef VIBR_SENSOR
-        setVibrAutoWakeUp();
-        #endif
-        txDutyCycleTime = appTxDutyCycle;
-        LoRaWAN.cycle(txDutyCycleTime);
-      }
+      // not sure if this is necessary
+      // if (!gpsTimerSet)
+      // {
+      //   // Schedule a wakeup for GPS read before going to sleep
+      //   TimerSetValue(&GPSCycleTimer, GPS_READ_RATE);
+      //   TimerStart(&GPSCycleTimer);
+      //   gpsTimerSet = true;
+      // }
       deviceState = DEVICE_STATE_SLEEP;
       break;
     }
@@ -1422,14 +1278,19 @@ void loop()
       }
       else if (!sleepMode) // When not in sleep mode - display the current GPS every second
       {
-        displayGPSInfoEverySecond();
+        autoSleepIfNoMovement();
 
-        if (appTxDutyCycle > GPS_READ_RATE && !gpsTimerSet) 
+        if (!sleepMode) // checking if autoSleepIfNoMovement() changed it
         {
-          // Schedule a wakeup for GPS read before going to sleep
-          TimerSetValue(&GPSCycleTimer, GPS_READ_RATE);
-          TimerStart(&GPSCycleTimer);
-          gpsTimerSet = true;          
+          displayGPSInfoEverySecond();
+
+          if (!gpsTimerSet) 
+          {
+            // Schedule a wakeup for GPS read before going to sleep
+            TimerSetValue(&GPSCycleTimer, GPS_READ_RATE);
+            TimerStart(&GPSCycleTimer);
+            gpsTimerSet = true;          
+          }
         }
       }
       else // going to deep sleep, no need to keep the display on
