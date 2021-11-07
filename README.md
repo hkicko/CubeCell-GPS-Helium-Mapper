@@ -13,15 +13,21 @@
 - Auto sleep if no movement
 
 This device is used for mapping the Helium networks LoRaWAN coverage. 
+
 The initial settings are - read GPS every 1 second, send every 25 meters, auto sleep if no movement for 5 min. Please feel free to increase the 25m distance, if you think it is consuming too much DC. 
+
 The Sleep mode (activatd from the menu or from auto-sleep) turns off the GPS and the radio. 
+
 Pressing the user button while in sleep mode wakes it up and resumes normal operation.
+
 There is also an option for auto-wakeup by vibration (additional sensor required).
+
 &quot;Non-stop mode&quot; menu option - this will disable the timers that would put the device to sleep for inactivity (no gps found, no vibration for x seconds, no send for x seconds). Useful if you are about to go on a bus/train/tube/metro ride that goes underground and loses GPS or stops for long periods and you don&apos;t want your device to go to sleep and stop sending. 
+
 &quot;Send now&quot; menu option - in case you haven&apos;t moved much but you want to send and see if hotspot will receive it.
 
 Revision changes:
-- merged GPSTimer branch into master (the old version was savede in branch OldTimerBased) which brings the following changes: 
+- merged GPSTimer branch into master (the old version was saved in branch OldTimerBased) which brings the following changes: 
 	- GPS read on timer to keep it hot 
 	- Distance based send (no longer timer based). We no loger have moving and stopped update rates. We no longer collect x speed readings and calculate average speed to detect movement ot stop.
 	- The Faster/Slower Upd menu options add or subtract 10m from the current value every time you click them with a hard limit of 10 min and 500 max. You can use that to test various values and once you find one that suits you - modify the default in the code and flash again.
