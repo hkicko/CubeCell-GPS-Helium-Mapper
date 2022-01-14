@@ -27,6 +27,7 @@ There is also an option for auto-wakeup by vibration (additional sensor required
 &quot;Send now&quot; menu option - in case you haven&apos;t moved much but you want to send and see if hotspot will receive it.
 
 Revision changes:
+- Enabled AT commands, added a custom AT command for enabling GPS messages output on the serial console for debugging, switched GPS comm speed to 115200 and decreased the number of NMEA message types requested from the GPS in order to decrease the amount of irrelevant chatter and the time we have to spend on reading it
 - merged GPSTimer branch into master (the old version was saved in branch OldTimerBased) which brings the following changes: 
 	- GPS read on timer to keep it hot 
 	- Distance based send (no longer timer based). We no loger have moving and stopped update rates. We no longer collect x speed readings and calculate average speed to detect movement ot stop.

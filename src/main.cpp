@@ -195,6 +195,7 @@ double    last_send_lon           = 0;
 uint32_t  min_dist_moved          = MIN_DIST;
 uint32_t  dist_moved              = UINT32_MAX;
 bool      nonstopMode             = false;
+bool      gps_debug               = false;
 
 #define MENU_CNT 8
 
@@ -246,7 +247,7 @@ void displayGPSInfo()
   char str[30];
   display.clear();
   display.setFont(ArialMT_Plain_10);
-  int index = sprintf(str, "%02d-%02d-%02d", GPS.date.year(), GPS.date.day(), GPS.date.month());
+  int index = sprintf(str, "%02d-%02d-%02d", GPS.date.year(), GPS.date.month(), GPS.date.day());
   str[index] = 0;
   display.setTextAlignment(TEXT_ALIGN_LEFT);
   display.drawString(0, 0, str);
@@ -581,17 +582,21 @@ void displayGPSWaitWithCounter()
 
 void startGPS()
 {
-  GPS.begin(); // If you are sure that you have selected the right include directive for your GPS chip, you can use GPS.begin(115200) here. 
+  GPS.begin(115200); // If you are sure that you have selected the right include directive for your GPS chip, you can use GPS.begin(115200) here. 
   // Air530Z code has setmode(MODE_GPS_BEIDOU_GLONASS) call in begin(), but for Air530 we will need to set it ourselves
   #ifdef GPS_Air530_H
   GPS.setmode(MODE_GPS_GLONASS); //Enable dual mode - GLONASS and GPS   
   #endif
+  GPS.setNMEA(NMEA_RMC | NMEA_GGA); // decrease the amount of unnecessary of data the GPS sends, NMEA_RMC has most of what we need, except altitude, NMEA_GGA has altitude but does not have date and speed
   gpsSearchStart = millis();
 }
 
 void cycleGPS()
 {
   uint32_t cycleGPStimer;
+  #define maxBuff 1000
+  char gpsBuff[maxBuff];
+  int gpsBuffPtr = 0;
 
   // read the location to clear the updated flag
   GPS.location.rawLat();
@@ -602,7 +607,14 @@ void cycleGPS()
   {
     while (GPS.available() > 0)
     {
-      GPS.encode(GPS.read());
+      gpsBuff[gpsBuffPtr] = GPS.read();
+      GPS.encode(gpsBuff[gpsBuffPtr]);
+      gpsBuffPtr++;
+      if (gpsBuffPtr >= maxBuff)
+      {
+        gpsBuffPtr = sprintf(gpsBuff,"++OF++"); // indicator for overflow
+      }
+      gpsBuff[gpsBuffPtr] = 0;
     }
 
     if (GPS.location.isUpdated())
@@ -628,6 +640,11 @@ void cycleGPS()
       last_lon    = ((GPS.location.lng() + 180) / 360.0) * 16777215;
       lastLocSet  = true;
     }
+  }
+
+  if (gps_debug)
+  {
+    Serial.println(gpsBuff);
   }
 }
 
@@ -1111,6 +1128,19 @@ void userKey(void)
       }
     }
   }
+}
+
+// Use AT+GPSDBG=1 to enable GPS debug output
+bool checkUserAt(char * cmd, char * content)
+{
+  if (strcmp(cmd, "GPSDBG")==0)
+  {
+    gps_debug = (atoi(content) == 1);
+    Serial.printf("+GPSDBG=%d", gps_debug);
+    Serial.println();
+    return true;
+  }
+  return false;
 }
 
 void setup() 
