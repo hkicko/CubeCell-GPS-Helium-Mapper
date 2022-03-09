@@ -58,8 +58,10 @@ uint32_t devAddr =  ( uint32_t )0x00000000;
 #if defined( REGION_EU868 )
 /*LoraWan channelsmask, default channels 0-7*/ 
 uint16_t userChannelsMask[6] = { 0x00FF,0x0000,0x0000,0x0000,0x0000,0x0000 };
+int8_t dataRates[6] = {0, 1, 2, 3, 4, 5};
 #else
 uint16_t userChannelsMask[6] = { 0xFF00,0x0000,0x0000,0x0000,0x0000,0x0000 };
+int8_t dataRates[4] = {0, 1, 2, 3};
 #endif
 
 /*LoraWan region, select in arduino IDE tools*/
@@ -196,10 +198,11 @@ uint32_t  min_dist_moved          = MIN_DIST;
 uint32_t  dist_moved              = UINT32_MAX;
 bool      nonstopMode             = false;
 bool      gps_debug               = false;
+uint8_t   currentDRidx            = 1;
 
-#define MENU_CNT 8
+#define MENU_CNT 9
 
-char* menu[MENU_CNT] = {"Screen OFF", "Sleep", "Send now", "Faster Upd", "Slower Upd", "Tracker mode", "Nonstop mode", "Debug Info"}; //"Reset GPS", "Bat V/%"
+char* menu[MENU_CNT] = {"Screen OFF", "Sleep", "Send now", "Faster Upd", "Slower Upd", "Tracker mode", "Nonstop mode", "Next DR", "Debug Info"}; //"Reset GPS", "Bat V/%"
 
 enum eMenuEntries
 {
@@ -210,6 +213,7 @@ enum eMenuEntries
   SLOWER_UPD,
   TRACKER_MODE,
   NONSTOP_MODE,
+  NEXTDR,
   DEBUG_INFO
   //RESET_GPS,
   //BAT_V_PCT
@@ -603,7 +607,7 @@ void cycleGPS()
 
   cycleGPStimer = millis();  
 
-  while (millis() - cycleGPStimer < GPS_READ_RATE)
+  while (millis() - cycleGPStimer < GPS_READ_RATE * 2)
   {
     while (GPS.available() > 0)
     {
@@ -630,7 +634,7 @@ void cycleGPS()
     }
   }
 
-  if (GPS.location.age() < GPS_READ_RATE)
+  if (GPS.location.age() < GPS_READ_RATE * 2)
   {
     dist_moved = GPS.distanceBetween(last_send_lat, last_send_lon, GPS.location.lat(), GPS.location.lng());
 
@@ -1040,6 +1044,16 @@ void executeMenu(void)
       menuMode = false;
       break;
 
+    case NEXTDR:
+      currentDRidx++;
+      if (currentDRidx >= sizeof(dataRates))
+      {
+        currentDRidx = 0;
+      }
+      LoRaWAN.setDataRateForNoADR(dataRates[currentDRidx]);
+      menuMode = false;
+      break;
+
     case DEBUG_INFO:
       displayDebugInfo();
       menuMode = false;
@@ -1113,7 +1127,7 @@ void userKey(void)
         else
         {
           menuMode = true;
-          currentMenu = 0;
+          //currentMenu = 0;
           deviceState = DEVICE_STATE_SLEEP;
         }        
         TimerSetValue(&menuIdleTimeout, MENU_IDLE_TIMEOUT);
@@ -1126,6 +1140,40 @@ void userKey(void)
       {
         executeMenu();
       }
+    }
+  }
+}
+
+void downLinkDataHandle(McpsIndication_t *mcpsIndication)
+{
+  #ifdef DEBUG
+  Serial.printf("+REV DATA:%s,RXSIZE %d,PORT %d\r\n",mcpsIndication->RxSlot?"RXWIN2":"RXWIN1",mcpsIndication->BufferSize,mcpsIndication->Port);
+  Serial.print("+REV DATA:");
+  for(uint8_t i=0;i<mcpsIndication->BufferSize;i++)
+  {
+    Serial.printf("%02X",mcpsIndication->Buffer[i]);
+  }
+  Serial.println();
+  #endif
+
+  //if (mcpsIndication->Port == 2) // no need to check the port, but leaving it here if someone wants to play with it
+  {
+    uint8_t cmd = mcpsIndication->Buffer[0];
+
+    if (cmd & 0x10)
+    {
+      trackerMode = (cmd & 0x01) == 1;
+    }
+
+    if (cmd & 0x20)
+    {
+      nonstopMode = (cmd & 0x2) == 1;
+    }
+
+    if (cmd & 0x40)
+    {
+        uint8_t dst = mcpsIndication->Buffer[1];
+        min_dist_moved = dst;
     }
   }
 }
@@ -1195,7 +1243,7 @@ void loop()
       #endif
       printDevParam();
       LoRaWAN.init(loraWanClass, loraWanRegion);
-      LoRaWAN.setDataRateForNoADR(0); // Set DR_0       
+      LoRaWAN.setDataRateForNoADR(1); // Set DR_1
       deviceState = DEVICE_STATE_JOIN;
       break;
     }
@@ -1314,7 +1362,7 @@ void loop()
         {
           displayGPSInfoEverySecond();
 
-          if (!gpsTimerSet) 
+          if (!gpsTimerSet && LoRaMacState == LORAMAC_IDLE) 
           {
             // Schedule a wakeup for GPS read before going to sleep
             TimerSetValue(&GPSCycleTimer, GPS_READ_RATE);
