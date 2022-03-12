@@ -1162,12 +1162,12 @@ void downLinkDataHandle(McpsIndication_t *mcpsIndication)
 
     if (cmd & 0x10)
     {
-      trackerMode = (cmd & 0x01) == 1;
+      trackerMode = (cmd & 0x01) != 0;
     }
 
     if (cmd & 0x20)
     {
-      nonstopMode = (cmd & 0x2) == 1;
+      nonstopMode = (cmd & 0x2) != 0;
     }
 
     if (cmd & 0x40)
