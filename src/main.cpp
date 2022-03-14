@@ -1212,7 +1212,7 @@ void setup()
   
   /* This will switch deviceState to DEVICE_STATE_SLEEP and schedule a SEND timer which will 
     switch to DEVICE_STATE_SEND if saved network info exists and no new JOIN is necessary */
-  LoRaWAN.ifskipjoin(); 
+  //LoRaWAN.ifskipjoin(); 
   
   if (deviceState != DEVICE_STATE_INIT)
   {
