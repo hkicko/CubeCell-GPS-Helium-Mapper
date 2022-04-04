@@ -199,6 +199,8 @@ uint32_t  dist_moved              = UINT32_MAX;
 bool      nonstopMode             = false;
 bool      gps_debug               = false;
 uint8_t   currentDRidx            = 1;
+bool      mustStartGPS            = false;
+bool      mustCycleGPS            = false;
 
 #define MENU_CNT 9
 
@@ -593,6 +595,7 @@ void startGPS()
   #endif
   GPS.setNMEA(NMEA_RMC | NMEA_GGA); // decrease the amount of unnecessary of data the GPS sends, NMEA_RMC has most of what we need, except altitude, NMEA_GGA has altitude but does not have date and speed
   gpsSearchStart = millis();
+  mustStartGPS = false;
 }
 
 void cycleGPS()
@@ -601,6 +604,8 @@ void cycleGPS()
   #define maxBuff 1000
   char gpsBuff[maxBuff];
   int gpsBuffPtr = 0;
+
+  mustCycleGPS = false;
 
   // read the location to clear the updated flag
   GPS.location.rawLat();
@@ -643,6 +648,15 @@ void cycleGPS()
       last_lat    = ((GPS.location.lat() + 90) / 180.0) * 16777215;
       last_lon    = ((GPS.location.lng() + 180) / 360.0) * 16777215;
       lastLocSet  = true;
+    }
+
+    if (deviceState != DEVICE_STATE_SEND)
+    {
+      // if we moved more than min_dist_moved, then send
+      if (dist_moved >= min_dist_moved)
+      {
+        deviceState = DEVICE_STATE_SEND;
+      }
     }
   }
 
@@ -707,7 +721,8 @@ void switchModeOutOfSleep()
     Serial.println("Waking Up...");
   }
   #endif
-  startGPS();
+  //startGPS(); - Apparently we can't do this anymore in libraries v1.4.0 because GPSSerial.available() does not return anything when we are inside an interrupt handler (as we would be if we call this from USR key press)
+  mustStartGPS = true;
   if (sendLastLoc) // If we are in tracker mode and we have to send last known location on wake up - go to SEND immediately 
   {
     deviceState = DEVICE_STATE_SEND;
@@ -761,13 +776,8 @@ static void OnGPSCycleTimerEvent()
 
   if (!loopingInSend)
   {
-    cycleGPS();  
-
-    // if we moved more than min_dist_moved, then send
-    if (dist_moved >= min_dist_moved)
-    {
-      deviceState = DEVICE_STATE_SEND;
-    }
+    //cycleGPS();  
+    mustCycleGPS = true;    
   }
   gpsTimerSet = false;
 }
@@ -1212,7 +1222,7 @@ void setup()
   
   /* This will switch deviceState to DEVICE_STATE_SLEEP and schedule a SEND timer which will 
     switch to DEVICE_STATE_SEND if saved network info exists and no new JOIN is necessary */
-  //LoRaWAN.ifskipjoin(); 
+  //LoRaWAN.ifskipjoin();
   
   if (deviceState != DEVICE_STATE_INIT)
   {
@@ -1234,6 +1244,16 @@ void setup()
 
 void loop()
 {
+  if (mustStartGPS)
+  {
+    startGPS();
+  }
+
+  if (mustCycleGPS)
+  {
+    cycleGPS();
+  }
+
   switch (deviceState)
   {
     case DEVICE_STATE_INIT:
@@ -1243,13 +1263,13 @@ void loop()
       #endif
       printDevParam();
       LoRaWAN.init(loraWanClass, loraWanRegion);
-      LoRaWAN.setDataRateForNoADR(1); // Set DR_1
+      LoRaWAN.setDataRateForNoADR(dataRates[currentDRidx]);
       deviceState = DEVICE_STATE_JOIN;
+      mustStartGPS = true;
       break;
     }
     case DEVICE_STATE_JOIN:
     {
-      startGPS();
       LoRaWAN.displayJoining();
       LoRaWAN.join();
       joinStart = millis();
@@ -1283,8 +1303,6 @@ void loop()
           gpsSearchStart = lastScreenPrint = millis(); 
         }
         
-        cycleGPS(); // Read anything queued in the GPS Serial buffer, parse it and populate the internal variables with the latest GPS data
-        
         if ((GPS.location.age() < GPS_READ_RATE) && (GPS.hdop.hdop() < 2))
         {
           if (prepareTxFrame(appPort)) // Don't send bad data (the method will return false if GPS coordinates are 0)
@@ -1311,10 +1329,8 @@ void loop()
         }   
         else
         {
-          // if (!screenOffMode)
-          // {
-          //   displayGPSWaitWithCounter();
-          // }
+          cycleGPS(); // Read anything queued in the GPS Serial buffer, parse it and populate the internal variables with the latest GPS data
+          
           autoSleepIfNoGPS(); // If the wait for GPS is too long, automatically go to sleep
         }   
       }
