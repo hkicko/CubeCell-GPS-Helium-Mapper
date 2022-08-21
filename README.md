@@ -27,6 +27,7 @@ There is also an option for auto-wakeup by vibration (additional sensor required
 &quot;Send now&quot; menu option - in case you haven&apos;t moved much but you want to send and see if hotspot will receive it.
 
 Revision changes:
+- Moved some logic out of interrupt handlers and into the main loop to avoid crashing. Added modified versions of the Serial and OnBoardGPS libs with memory leak fix and faster GPS baud rate detection. 
 - Added "Next DR" menu to cycle through different data rates. Default data rate changed to DR1 (from DR0). (Known issue - Debug info screen shows the DR from the last send, so if you switch the DR and check the debug info it will show the old value until you send something)
 - Added downlink handling code - available commands are - "EQ==" (Enable tracker mode), "EA==" (Disable tracker mode), "Ig==" (Enable non-stop mode), "IA==" (Disable non-stop mode), "QDI=" (Change distance to 50m), "QGQ=" (Change distance to 100m). You can combine multiple commands. First byte, top half is the command, lower half is the value, except for the distance command which requires a second byte. Look at the code for more details. 
 - Changed the behavior of the menu when you re-enter it - it now opens to the last used menu option instead of resetting back to the first one. 

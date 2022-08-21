@@ -3,8 +3,8 @@
  */
 #include "LoRaWan_APP.h"
 #include "Arduino.h"
-#include "GPS_Air530.h" // Enable this for board version 1.0 and 1.0_1
-//#include "GPS_Air530Z.h" // Enable this for board version 1.1
+//#include "GPS_Air530.h" // Enable this for board version 1.0 and 1.0_1
+#include "GPS_Air530Z.h" // Enable this for board version 1.1
 #include "HT_SSD1306Wire.h"
 
 //#define DEBUG // Enable/Disable debug output over the serial console
@@ -201,6 +201,8 @@ bool      gps_debug               = false;
 uint8_t   currentDRidx            = 1;
 bool      mustStartGPS            = false;
 bool      mustCycleGPS            = false;
+bool      mustToggleSleepMode     = false;
+bool      mustToggleScreenMode    = false;
 
 #define MENU_CNT 9
 
@@ -588,12 +590,14 @@ void displayGPSWaitWithCounter()
 
 void startGPS()
 {
+  detachInterrupt(USER_KEY); // User key press during GPS baud rate detection crashes the device, so we disable the interrupt for the duration of that process
   GPS.begin(115200); // If you are sure that you have selected the right include directive for your GPS chip, you can use GPS.begin(115200) here. 
   // Air530Z code has setmode(MODE_GPS_BEIDOU_GLONASS) call in begin(), but for Air530 we will need to set it ourselves
   #ifdef GPS_Air530_H
   GPS.setmode(MODE_GPS_GLONASS); //Enable dual mode - GLONASS and GPS   
   #endif
-  GPS.setNMEA(NMEA_RMC | NMEA_GGA); // decrease the amount of unnecessary of data the GPS sends, NMEA_RMC has most of what we need, except altitude, NMEA_GGA has altitude but does not have date and speed
+  GPS.setNMEA(NMEA_RMC | NMEA_GGA); // decrease the amount of unnecessary data the GPS sends, NMEA_RMC has most of what we need, except altitude, NMEA_GGA has altitude but does not have date and speed
+  attachInterrupt(USER_KEY, userKey, FALLING); // enable back the user key press monitoring
   gpsSearchStart = millis();
   mustStartGPS = false;
 }
@@ -691,6 +695,7 @@ void switchModeToSleep()
     Serial.println("Going to sleep...");
   }
   #endif
+  mustCycleGPS = false;
   stopGPS();
   Radio.Sleep(); // Not sure this is needed. It is called by LoRaAPP.cpp in various places after TX done or timeout. Most probably in 99% of the cases it will be already called when we get here. 
   sendLastLoc = trackerMode; // After wake up, if tracker mode enabled - send the last known location before waiting for GPS
@@ -723,14 +728,8 @@ void switchModeOutOfSleep()
   #endif
   //startGPS(); - Apparently we can't do this anymore in libraries v1.4.0 because GPSSerial.available() does not return anything when we are inside an interrupt handler (as we would be if we call this from USR key press)
   mustStartGPS = true;
-  if (sendLastLoc) // If we are in tracker mode and we have to send last known location on wake up - go to SEND immediately 
-  {
-    deviceState = DEVICE_STATE_SEND;
-  }
-  else
-  {
-    deviceState = DEVICE_STATE_SLEEP;
-  }
+  mustCycleGPS = false;
+  deviceState = DEVICE_STATE_SEND;
   loopingInSend = false;
   #ifdef VIBR_AUTOSLEEP_TIMEOUT
   lastVibrEvent = millis(); // reset variable to prevent auto sleep immediately after wake up
@@ -944,7 +943,7 @@ void vibration(void)
       #ifdef MENU_SLEEP_DISABLE_VIBR_WAKEUP // If menu sleep overwrites the "vibration wake up from sleeep", then add the IF statement to not wake up when sleep was initiated from the menu
       if (!sleepActivatedFromMenu)
       #endif  
-      switchModeOutOfSleep();
+      mustToggleSleepMode = true;
       #endif
     }    
   }
@@ -1013,13 +1012,13 @@ void executeMenu(void)
   switch (currentMenu)
   {
     case SCREEN_OFF:
-      switchScrenOffMode();
+      mustToggleScreenMode = true;
       menuMode = false;      
       break;
 
     case SLEEP:
       sleepActivatedFromMenu = true;
-      switchModeToSleep();
+      mustToggleSleepMode = true;
       menuMode = false;
       break;
 
@@ -1118,11 +1117,11 @@ void userKey(void)
           display.init();
           isDispayOn = 1;
         }
-        switchModeOutOfSleep();
+        mustToggleSleepMode = true;
       }
       else if (screenOffMode)
       {
-        switchScreenOnMode();
+        mustToggleScreenMode = true;
       }
       else
       {
@@ -1151,6 +1150,45 @@ void userKey(void)
         executeMenu();
       }
     }
+  }
+}
+
+void handleStateChangesOnLoopStart()
+{
+  if (mustStartGPS)
+  {
+    startGPS();
+  }
+
+  if (mustCycleGPS && !sleepMode && !menuMode)
+  {
+    cycleGPS();
+  }
+
+  if (mustToggleScreenMode)
+  {
+    if (screenOffMode)
+    {
+      switchScreenOnMode();
+    }
+    else
+    {
+      switchScrenOffMode();
+    }
+    mustToggleScreenMode = false;
+  }
+
+  if (mustToggleSleepMode)
+  {
+    if (sleepMode)
+    {
+      switchModeOutOfSleep();
+    }
+    else
+    {
+      switchModeToSleep();
+    }
+    mustToggleSleepMode = false;
   }
 }
 
@@ -1244,15 +1282,7 @@ void setup()
 
 void loop()
 {
-  if (mustStartGPS)
-  {
-    startGPS();
-  }
-
-  if (mustCycleGPS)
-  {
-    cycleGPS();
-  }
+  handleStateChangesOnLoopStart();
 
   switch (deviceState)
   {
