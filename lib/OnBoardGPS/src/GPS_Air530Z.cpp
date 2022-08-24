@@ -24,20 +24,20 @@ void Air530ZClass::begin(uint32_t baud)
 	pinMode(_powerCtl,OUTPUT);
 	digitalWrite(_powerCtl, LOW);
 
-	int i = 0;
+	int i = bauds_array - 1;
 	GPSSerial.begin(bauds[i]);
 	String temp = "";
 
 	Serial.println("GPS Current baudrate detecting...");
 	while(getNMEA() == "0" )
 	{
-		//Serial.println(bauds[i]);
-		GPSSerial.updateBaudRate(bauds[i]);
 		i++;
 		if( i== bauds_array )
 		{
 			i=0;
 		}
+		//Serial.println(bauds[i]);
+		GPSSerial.updateBaudRate(bauds[i]);
 		delay(50);
 		GPSSerial.flush();
 		temp = getNMEA();
@@ -208,7 +208,7 @@ void Air530ZClass::end()
 void Air530ZClass::sendcmd(String cmd)
 {
 
-	while(GPSSerial.available())//wait for gps serial idel
+	while(GPSSerial.available())//wait for gps serial idle
 	{
 		GPSSerial.readStringUntil('\r');
 	}

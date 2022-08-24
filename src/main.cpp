@@ -1249,12 +1249,15 @@ void setup()
   enableAt();
   #endif
 
-  // Display branding image. If we don't want that - the following 2 lines can be removed  
-  display.init(); // displayMcuInit() will init the display, but if we want to show our logo before that, we need to init ourselves.   
-  isDispayOn = 1;
-  displayLogoAndMsg("MAPPER", 4000);
+  if (!screenOffMode)
+  {
+    // Display branding image. If we don't want that - the following 2 lines can be removed
+    display.init(); // displayMcuInit() will init the display, but if we want to show our logo before that, we need to init ourselves.
+    isDispayOn = 1;
+    displayLogoAndMsg("MAPPER", 4000);
 
-  LoRaWAN.displayMcuInit(); // This inits and turns on the display  
+    LoRaWAN.displayMcuInit(); // This inits and turns on the display
+  }
   
   deviceState = DEVICE_STATE_INIT;
   
@@ -1300,7 +1303,10 @@ void loop()
     }
     case DEVICE_STATE_JOIN:
     {
-      LoRaWAN.displayJoining();
+      if (!screenOffMode)
+      {
+        LoRaWAN.displayJoining();
+      }
       LoRaWAN.join();
       joinStart = millis();
       lastScreenPrint = joinStart;
